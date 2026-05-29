@@ -1,0 +1,608 @@
+# =============================================
+#  INSIDE MY CAMPUS — API TESTS
+#  REST Client for VS Code
+#
+#  HOW TO USE:
+#  1. Click "Send Request" above each block
+#  2. Run in ORDER from top to bottom
+#  3. After login — copy token from response
+#  4. Paste token where it says YOUR_TOKEN_HERE
+# =============================================
+
+
+# =============================================
+# 1. HEALTH CHECK
+# =============================================
+
+### Health — confirm server + DB working
+GET http://localhost:5000/api/health
+
+###
+
+
+# =============================================
+# 2. REGISTER USERS
+# Run these first before login tests
+# =============================================
+
+### Register student user
+POST http://localhost:5000/api/auth/register
+Content-Type: application/json
+
+{
+  "firstName":  "John",
+  "lastName":   "Doe",
+  "email":      "john@test.com",
+  "password":   "password123",
+  "university": "UNILAG"
+}
+
+###
+
+### Register admin user
+POST http://localhost:5000/api/auth/register
+Content-Type: application/json
+
+{
+  "firstName":  "Admin",
+  "lastName":   "IMC",
+  "email":      "admin@imc.com",
+  "password":   "admin123",
+  "university": "IMC HQ"
+}
+
+###
+
+### Register second student (for ambassador tests)
+POST http://localhost:5000/api/auth/register
+Content-Type: application/json
+
+{
+  "firstName":  "Jane",
+  "lastName":   "Smith",
+  "email":      "jane@test.com",
+  "password":   "password123",
+  "university": "UNN"
+}
+
+###
+
+
+# =============================================
+# 3. LOGIN — copy tokens from responses
+# =============================================
+
+### Login as student — copy token
+POST http://localhost:5000/api/auth/login
+Content-Type: application/json
+
+{
+  "email":    "john@test.com",
+  "password": "password123"
+}
+
+###
+
+### Login as admin — copy token
+### After this — go to MongoDB Compass
+### Find admin@imc.com in users collection
+### Change role from "student" to "admin"
+### Then login again to get admin token
+POST http://localhost:5000/api/auth/login
+Content-Type: application/json
+
+{
+  "email":    "admin@imc.com",
+  "password": "admin123"
+}
+
+###
+
+### Login as Jane — copy token
+POST http://localhost:5000/api/auth/login
+Content-Type: application/json
+
+{
+  "email":    "jane@test.com",
+  "password": "password123"
+}
+
+###
+
+### Test wrong password — must return error
+POST http://localhost:5000/api/auth/login
+Content-Type: application/json
+
+{
+  "email":    "john@test.com",
+  "password": "wrongpassword"
+}
+
+###
+
+
+# =============================================
+# 4. AUTH PROTECTED ROUTES
+# Replace YOUR_TOKEN_HERE with real token
+# =============================================
+
+### Get my profile
+GET http://localhost:5000/api/auth/me
+Authorization: Bearer YOUR_TOKEN_HERE
+
+###
+
+### Update profile
+PUT http://localhost:5000/api/auth/update-profile
+Content-Type: application/json
+Authorization: Bearer YOUR_TOKEN_HERE
+
+{
+  "firstName":  "John",
+  "university": "UNILAG Updated"
+}
+
+###
+
+
+# =============================================
+# 5. VENDOR ROUTES
+# =============================================
+
+### Get all vendors — public, no token needed
+GET http://localhost:5000/api/vendors
+
+###
+
+### Get all products — public, no token needed
+GET http://localhost:5000/api/vendors/products/all
+
+###
+
+### Check my vendor profile — needs token
+GET http://localhost:5000/api/vendors/my-profile
+Authorization: Bearer YOUR_TOKEN_HERE
+
+###
+
+### Register as vendor — needs token
+POST http://localhost:5000/api/vendors/register
+Content-Type: application/json
+Authorization: Bearer YOUR_TOKEN_HERE
+
+{
+  "fullName":    "John Doe",
+  "bizName":     "Johns Sneakers Hub",
+  "university":  "UNILAG",
+  "category":    "Fashion",
+  "description": "Premium sneakers and streetwear for campus students",
+  "whatsApp":    "08012345678",
+  "paymentRef":  "TEST-PAY-001"
+}
+
+###
+
+### Get my vendor profile after registering
+GET http://localhost:5000/api/vendors/my-profile
+Authorization: Bearer YOUR_TOKEN_HERE
+
+###
+
+### Add product — needs token
+POST http://localhost:5000/api/vendors/products
+Content-Type: application/json
+Authorization: Bearer YOUR_TOKEN_HERE
+
+c
+
+###
+
+### Add second product
+POST http://localhost:5000/api/vendors/products
+Content-Type: application/json
+Authorization: Bearer YOUR_TOKEN_HERE
+
+{
+  "name":        "Jordan 1 Retro",
+  "price":       35000,
+  "description": "Classic Jordan colorways",
+  "category":    "Fashion"
+}
+
+###
+
+### Get all products again — should show products now
+GET http://localhost:5000/api/vendors/products/all
+
+###
+
+
+# =============================================
+# 6. AMBASSADOR ROUTES
+# Use Jane's token for these
+# =============================================
+
+### Register Jane as ambassador
+POST http://localhost:5000/api/ambassadors/register
+Content-Type: application/json
+Authorization: Bearer JANE_TOKEN_HERE
+
+{
+  "fullName":   "Jane Smith",
+  "university": "UNN",
+  "username":   "jane_unn",
+  "whatsApp":   "08098765432",
+  "social":     "@jane_unn",
+  "reason":     "I want to grow IMC at UNN"
+}
+
+###
+
+### Get Jane's ambassador profile
+GET http://localhost:5000/api/ambassadors/my-profile
+Authorization: Bearer JANE_TOKEN_HERE
+
+###
+
+### Claim task reward
+POST http://localhost:5000/api/ambassadors/claim-task
+Content-Type: application/json
+Authorization: Bearer JANE_TOKEN_HERE
+
+{
+  "taskId": "T001",
+  "reward": 200
+}
+
+###
+
+### Request withdrawal
+POST http://localhost:5000/api/ambassadors/withdraw
+Content-Type: application/json
+Authorization: Bearer JANE_TOKEN_HERE
+
+{
+  "accountName": "Jane Smith",
+  "bankName":    "GTBank",
+  "accountNum":  "0123456789",
+  "amount":      200
+}
+
+###
+
+
+# =============================================
+# 7. NEWS ROUTES
+# =============================================
+
+### Get all news — public
+GET http://localhost:5000/api/news
+
+###
+
+### Submit news as student — will be pending
+POST http://localhost:5000/api/news
+Content-Type: application/json
+Authorization: Bearer YOUR_TOKEN_HERE
+
+{
+  "title":      "UNILAG Exam Timetable Released",
+  "university": "UNILAG",
+  "content":    "The University of Lagos has officially released the 2024 examination timetable. All students must check the portal for their individual schedules.",
+  "authorName": "John Doe"
+}
+
+###
+
+### Submit news as admin — auto approved
+POST http://localhost:5000/api/news
+Content-Type: application/json
+Authorization: Bearer ADMIN_TOKEN_HERE
+
+{
+  "title":      "Inside My Campus Now Live Nationwide",
+  "university": "All Universities",
+  "content":    "Inside My Campus is now officially live across all Nigerian universities. Students can discover vendors, find accommodation and access campus news.",
+  "pinned":     true
+}
+
+###
+
+### Get all news — admin post should now appear
+GET http://localhost:5000/api/news
+
+###
+
+### Admin get ALL news including pending
+GET http://localhost:5000/api/news/admin/all
+Authorization: Bearer ADMIN_TOKEN_HERE
+
+###
+
+
+# =============================================
+# 8. COURSE ROUTES
+# =============================================
+
+### Get all courses — public
+GET http://localhost:5000/api/courses
+
+###
+
+### Create course — admin only
+POST http://localhost:5000/api/courses
+Content-Type: application/json
+Authorization: Bearer ADMIN_TOKEN_HERE
+
+{
+  "title":       "How to Start a Campus Business",
+  "category":    "Business",
+  "description": "Learn to build a profitable business as a student.",
+  "price":       1000,
+  "fileUrl":     "https://example.com/course1.pdf",
+  "duration":    "3 hours",
+  "lessons":     12,
+  "level":       "Beginner"
+}
+
+###
+
+### Create free course — admin only
+POST http://localhost:5000/api/courses
+Content-Type: application/json
+Authorization: Bearer ADMIN_TOKEN_HERE
+
+{
+  "title":       "Personal Finance for Students",
+  "category":    "Finance",
+  "description": "Manage your money on a student budget.",
+  "price":       0,
+  "fileUrl":     "https://example.com/course2.pdf",
+  "duration":    "2 hours",
+  "lessons":     8,
+  "level":       "Beginner"
+}
+
+###
+
+### Get all courses — should show 2 now
+GET http://localhost:5000/api/courses
+
+###
+
+### Purchase a course
+### Replace COURSE_ID with _id from course list above
+POST http://localhost:5000/api/courses/purchase
+Content-Type: application/json
+Authorization: Bearer YOUR_TOKEN_HERE
+
+{
+  "courseId":   "COURSE_ID_HERE",
+  "paymentRef": "TEST-COURSE-001"
+}
+
+###
+
+### Get my purchased courses
+GET http://localhost:5000/api/courses/my-courses
+Authorization: Bearer YOUR_TOKEN_HERE
+
+###
+
+
+# =============================================
+# 9. ADMIN ROUTES
+# All need admin token
+# =============================================
+
+### Platform statistics
+GET http://localhost:5000/api/admin/stats
+Authorization: Bearer ADMIN_TOKEN_HERE
+
+###
+
+### All users
+GET http://localhost:5000/api/admin/users
+Authorization: Bearer ADMIN_TOKEN_HERE
+
+###
+
+### All vendors
+GET http://localhost:5000/api/admin/vendors
+Authorization: Bearer ADMIN_TOKEN_HERE
+
+###
+
+### Pending vendors only
+GET http://localhost:5000/api/admin/vendors?status=pending
+Authorization: Bearer ADMIN_TOKEN_HERE
+
+###
+
+### Approve vendor — replace VENDOR_ID
+PUT http://localhost:5000/api/admin/vendors/VENDOR_ID_HERE
+Content-Type: application/json
+Authorization: Bearer ADMIN_TOKEN_HERE
+
+{
+  "status": "approved"
+}
+
+###
+
+### Withdrawal requests
+GET http://localhost:5000/api/admin/withdrawals
+Authorization: Bearer ADMIN_TOKEN_HERE
+
+###
+
+
+# =============================================
+# 10. PAYMENT ROUTE
+# =============================================
+
+### Verify payment
+POST http://localhost:5000/api/payments/verify
+Content-Type: application/json
+Authorization: Bearer YOUR_TOKEN_HERE
+
+{
+  "reference": "TEST-REF-12345",
+  "type":      "vendor_registration",
+  "amount":    10000
+}
+
+###
+# =============================================
+# LESSON 6 — ADS ROUTES
+# =============================================
+
+### Get all approved ads — public
+GET http://localhost:5000/api/ads
+
+###
+
+### Submit an ad — needs token
+POST http://localhost:5000/api/ads
+Content-Type: application/json
+Authorization: Bearer YOUR_TOKEN_HERE
+
+{
+  "title":       "Fresh Jollof Rice — Fast Delivery",
+  "category":    "Food and Drinks",
+  "description": "Freshly cooked jollof rice available for delivery on campus. Order minimum 2 plates.",
+  "location":    "UNILAG, Yaba Lagos",
+  "contact":     "08012345678",
+  "duration":    7,
+  "paymentRef":  "AD-PAY-TEST-001"
+}
+
+###
+
+### Get my submitted ads
+GET http://localhost:5000/api/ads/my-ads
+Authorization: Bearer YOUR_TOKEN_HERE
+
+###
+
+### Admin — get all ads including pending
+GET http://localhost:5000/api/ads/admin/all
+Authorization: Bearer ADMIN_TOKEN_HERE
+
+###
+
+### Admin — approve ad (replace AD_ID)
+PUT http://localhost:5000/api/ads/AD_ID_HERE/status
+Content-Type: application/json
+Authorization: Bearer ADMIN_TOKEN_HERE
+
+{
+  "status": "approved"
+}
+
+###
+
+### Get all ads again — approved ad should appear now
+GET http://localhost:5000/api/ads
+
+###
+
+
+# =============================================
+# LESSON 6 — CONTACT ROUTES
+# =============================================
+
+### Submit contact message — public
+POST http://localhost:5000/api/contact
+Content-Type: application/json
+
+{
+  "name":    "John Doe",
+  "email":   "john@test.com",
+  "subject": "Question about vendor registration",
+  "message": "Hello, I am trying to register as a vendor but I need more information about the process. Can you help?"
+}
+
+###
+
+### Admin — get all messages
+GET http://localhost:5000/api/contact
+Authorization: Bearer ADMIN_TOKEN_HERE
+
+###
+
+### Admin — mark message as read (replace MESSAGE_ID)
+PUT http://localhost:5000/api/contact/MESSAGE_ID_HERE/read
+Content-Type: application/json
+Authorization: Bearer ADMIN_TOKEN_HERE
+
+{}
+
+# =============================================
+# PAYMENT ROUTES — TEST ALL
+# =============================================
+
+### Quick test — confirm routes loaded
+GET http://localhost:5000/api/payments/test
+
+###
+
+### Initialize vendor registration payment
+POST http://localhost:5000/api/payments/initialize
+Content-Type: application/json
+Authorization: Bearer YOUR_TOKEN_HERE
+
+{
+  "amount":      10000,
+  "type":        "vendor_registration",
+  "description": "Vendor Registration Fee — Inside My Campus"
+}
+
+###
+
+### Initialize ad posting payment
+POST http://localhost:5000/api/payments/initialize
+Content-Type: application/json
+Authorization: Bearer YOUR_TOKEN_HERE
+
+{
+  "amount":      2000,
+  "type":        "ad_posting",
+  "description": "Ad Posting Fee — 7 days"
+}
+
+###
+
+### Initialize course purchase payment
+POST http://localhost:5000/api/payments/initialize
+Content-Type: application/json
+Authorization: Bearer YOUR_TOKEN_HERE
+
+{
+  "amount":      1000,
+  "type":        "course_purchase",
+  "description": "Course Purchase",
+  "metadata": {
+    "courseId": "REPLACE_WITH_REAL_COURSE_ID"
+  }
+}
+
+###
+
+### Verify payment (simulated reference)
+POST http://localhost:5000/api/payments/verify
+Content-Type: application/json
+Authorization: Bearer YOUR_TOKEN_HERE
+
+{
+  "reference": "SIM-VENDOR_REGISTRATION-1234567890",
+  "type":      "vendor_registration"
+}
+
+###
+
+### Admin — get all payment records
+GET http://localhost:5000/api/admin/payments
+Authorization: Bearer ADMIN_TOKEN_HERE
+
+###
