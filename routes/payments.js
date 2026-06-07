@@ -2,7 +2,7 @@
 
 const express     = require('express');
 const router      = express.Router();
-const ctrl        = require('../controllers/paymentController');
+const ctrl        = require('../controllers/paymentcontroller');
 const { protect } = require('../middleware/auth');
 
 // Debug log — confirms file loaded

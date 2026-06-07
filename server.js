@@ -125,7 +125,7 @@ loadRoute('./routes/auth',        '/api/auth');
 (function () {
   var express      = require('express');
   var vRouter      = express.Router();
-  var vCtrl        = require('./controllers/vendorController');
+  var vCtrl        = require('./controllers/vendorcontroller');
   var authMw       = require('./middleware/auth');
 
   vRouter.use(function (req, res, next) {

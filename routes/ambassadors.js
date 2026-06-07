@@ -2,7 +2,7 @@
 
 const express    = require('express');
 const router     = express.Router();
-const ctrl       = require('../controllers/ambassadorController');
+const ctrl       = require('../controllers/ambassadorcontroller');
 const { protect, adminOnly } = require('../middleware/auth');
 
 // =============================================

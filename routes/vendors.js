@@ -2,7 +2,7 @@
 
 const express     = require('express');
 const router      = express.Router();
-const ctrl        = require('../controllers/vendorController');
+const ctrl        = require('../controllers/vendorcontroller');
 const { protect } = require('../middleware/auth');
 
 // =============================================

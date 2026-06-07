@@ -2,7 +2,7 @@
 
 const express    = require('express');
 const router     = express.Router();
-const ctrl       = require('../controllers/adController');
+const ctrl       = require('../controllers/adcontroller');
 const { protect, adminOnly } = require('../middleware/auth');
 
 // Static routes first

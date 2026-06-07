@@ -2,7 +2,7 @@
 
 const express    = require('express');
 const router     = express.Router();
-const ctrl       = require('../controllers/courseController');
+const ctrl       = require('../controllers/coursecontroller');
 const { protect, adminOnly } = require('../middleware/auth');
 
 // =============================================

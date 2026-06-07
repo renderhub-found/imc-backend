@@ -2,13 +2,13 @@
 
 const express     = require('express');
 const router      = express.Router();
-const ctrl        = require('../controllers/authController');
+const ctrl        = require('../controllers/authcontroller');
 const { protect } = require('../middleware/auth');
 
 // POST /api/auth/register
 router.post('/register', ctrl.register);
 
-// POST /api/auth/login
+// POST /api/ao/login
 router.post('/login', ctrl.login);
 
 // GET  /api/auth/me
