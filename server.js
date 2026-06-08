@@ -42,7 +42,7 @@ var allowedOrigins = [
   'http://127.0.0.1:5500',
   'http://localhost:5500',
   'http://localhost:3000',
-  process.env.https://6a26daade5ed4421dbc77fbc--resilient-ganache-be5b9c.netlify.app/
+  process.env.FRONTEND_URL
 ].filter(Boolean);
 
 app.use(cors({
