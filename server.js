@@ -34,49 +34,60 @@ console.log('🔑 JWT Secret:  ' + (JWT_SECRET ? 'Loaded ✅' : 'Missing ❌'));
 console.log('');
 
 // ================================================
-//   MIDDLEWARE
+//   MIDDLEWARE — ORDER MATTERS
 // ================================================
 
-// Allow both local development and production frontend
-var allowedOrigins = [
-  'http://127.0.0.1:5500',
-  'http://localhost:5500',
-  'http://localhost:3000',
-  process.env.FRONTEND_URL
-].filter(Boolean);
+// 1. Webhook raw body FIRST
+app.use(
+  '/api/payments/webhook',
+  express.raw({ type: 'application/json' })
+);
 
-app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, curl, Postman)
-    if (!origin) return callback(null, true);
-
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      return callback(null, true);
-    }
-
-    // In development allow everything
-    if (process.env.NODE_ENV === 'development') {
-      return callback(null, true);
-    }
-
-    return callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true,
-  methods:      ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-
-// Webhook needs raw body — must come before json parser
-app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
-
-// All other routes use JSON parser
+// 2. Body parsers
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// ---- Request logger (shows every incoming request) ----
+// 3. CORS — manual implementation fixes OPTIONS preflight
 app.use(function (req, res, next) {
-  console.log('[' + new Date().toLocaleTimeString() + '] ' +
-    req.method + ' ' + req.originalUrl);
+  var origin = req.headers.origin;
+
+  var allowedOrigins = [
+    'http://127.0.0.1:5500',
+    'http://localhost:5500',
+    'http://localhost:3000',
+    'https://resilient-ganache-be5b9c.netlify.app',
+    process.env.FRONTEND_URL
+  ].filter(Boolean);
+
+  if (origin && allowedOrigins.indexOf(origin) !== -1) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  } else if (!origin) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+
+  res.setHeader(
+    'Access-Control-Allow-Methods',
+    'GET, POST, PUT, DELETE, OPTIONS'
+  );
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization, X-Requested-With'
+  );
+
+  // OPTIONS preflight — return immediately, no auth needed
+  if (req.method === 'OPTIONS') {
+    console.log('OPTIONS preflight for: ' + req.originalUrl);
+    return res.status(200).end();
+  }
+
+  next();
+});
+
+// 4. Request logger
+app.use(function (req, res, next) {
+  console.log(req.method + ' ' + req.originalUrl +
+    ' origin:' + (req.headers.origin || 'none'));
   next();
 });
 
