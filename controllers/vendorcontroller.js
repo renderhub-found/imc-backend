@@ -111,12 +111,23 @@ const getAllProducts = async function (req, res) {
 // POST /api/vendors/register
 const registerVendor = async function (req, res) {
   try {
-    var existing = await Vendor.findOne({ user: req.user._id });
-    if (existing) {
-      return res.status(400).json({
-        success: false,
+    var userId = req.user._id;
+
+    console.log('[registerVendor] Called by:', req.user.email);
+    console.log('[registerVendor] Body:', JSON.stringify(req.body));
+
+    // Check if already a vendor
+    var existingVendor = await Vendor.findOne({ user: userId });
+
+    if (existingVendor) {
+      console.log('[registerVendor] Already a vendor:', existingVendor.bizName);
+
+      // If already paid and exists — just return it
+      return res.status(200).json({
+        success: true,
         message: 'Already registered as a vendor.',
-        vendor:  existing
+        vendor:  existingVendor,
+        alreadyExists: true
       });
     }
 
@@ -129,16 +140,27 @@ const registerVendor = async function (req, res) {
     var refCode     = (req.body.refCode     || '').trim();
     var paymentRef  = (req.body.paymentRef  || '').trim();
 
-    if (!fullName || !bizName || !university ||
-        !category || !description || !whatsApp) {
+    // Validate required fields
+    var missing = [];
+    if (!fullName)    missing.push('fullName');
+    if (!bizName)     missing.push('bizName');
+    if (!university)  missing.push('university');
+    if (!category)    missing.push('category');
+    if (!description) missing.push('description');
+    if (!whatsApp)    missing.push('whatsApp');
+
+    if (missing.length > 0) {
+      console.log('[registerVendor] Missing fields:', missing);
       return res.status(400).json({
         success: false,
-        message: 'Please fill in all required fields.'
+        message: 'Missing required fields: ' + missing.join(', ')
       });
     }
 
+    console.log('[registerVendor] Creating vendor document...');
+
     var vendor = await Vendor.create({
-      user:          req.user._id,
+      user:          userId,
       fullName:      fullName,
       email:         req.user.email,
       bizName:       bizName,
@@ -152,7 +174,11 @@ const registerVendor = async function (req, res) {
       status:        'pending'
     });
 
-    await User.findByIdAndUpdate(req.user._id, { role: 'vendor' });
+    console.log('[registerVendor] Vendor created! ID:', vendor._id);
+
+    // Update user role to vendor
+    await User.findByIdAndUpdate(userId, { role: 'vendor' });
+    console.log('[registerVendor] User role updated to vendor');
 
     // Credit ambassador referral
     if (refCode) {
@@ -163,13 +189,14 @@ const registerVendor = async function (req, res) {
           amb.referrals.push({
             vendorId:   vendor._id,
             vendorName: bizName,
-            commission: 500
+            commission: 2000
           });
-          amb.earnings += 500;
+          amb.earnings += 2000;
           await amb.save();
+          console.log('[registerVendor] Ambassador credited:', amb.fullName);
         }
       } catch (refErr) {
-        console.log('Referral credit failed:', refErr.message);
+        console.log('[registerVendor] Referral credit failed:', refErr.message);
       }
     }
 
@@ -178,11 +205,12 @@ const registerVendor = async function (req, res) {
       message: 'Vendor registration submitted! Pending admin approval.',
       vendor:  vendor
     });
+
   } catch (err) {
-    console.error('Register vendor error:', err.message);
+    console.error('[registerVendor] Error:', err.message);
     return res.status(500).json({
       success: false,
-      message: err.message
+      message: 'Vendor registration failed: ' + err.message
     });
   }
 };

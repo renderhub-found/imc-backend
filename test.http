@@ -449,7 +449,7 @@ Authorization: Bearer YOUR_TOKEN_HERE
 {
   "reference": "TEST-REF-12345",
   "type":      "vendor_registration",
-  "amount":    10000
+  "amount":    5000
 }
 
 ###
@@ -553,7 +553,7 @@ Content-Type: application/json
 Authorization: Bearer YOUR_TOKEN_HERE
 
 {
-  "amount":      10000,
+  "amount":      5000,
   "type":        "vendor_registration",
   "description": "Vendor Registration Fee — Inside My Campus"
 }

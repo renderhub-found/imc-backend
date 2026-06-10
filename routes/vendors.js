@@ -61,4 +61,33 @@ router.get('/:id', function (req, res, next) {
   next();
 }, ctrl.getVendorById);
 
+// POST /api/vendors/complete-registration
+// For users who paid but vendor record was not created
+router.post('/complete-registration', protect, async function (req, res) {
+  try {
+    console.log('[CompleteReg] Called by:', req.user.email);
+
+    // Check if already a vendor
+    var existing = await Vendor.findOne({ user: req.user._id });
+    if (existing) {
+      return res.status(200).json({
+        success:       true,
+        message:       'Already a vendor.',
+        vendor:        existing,
+        alreadyExists: true
+      });
+    }
+
+    var ctrl = require('../controllers/vendorController');
+    return ctrl.registerVendor(req, res);
+
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: err.message
+    });
+  }
+});
+
+
 module.exports = router;

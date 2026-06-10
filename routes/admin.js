@@ -37,7 +37,7 @@ router.get('/stats', protect, adminOnly,
 
       // Revenue calculation
       var paidVendors      = await Vendor.countDocuments({ paymentStatus: 'paid' });
-      var vendorRevenue    = paidVendors * 10000;
+      var vendorRevenue    = paidVendors * 5000;
 
       var adDocs           = await Ad.find({ paymentStatus: 'paid' }).select('price');
       var adRevenue        = adDocs.reduce(function (sum, a) {
@@ -637,7 +637,7 @@ router.get('/payments', protect, adminOnly,
           type:      'Vendor Registration',
           name:      v.bizName,
           email:     v.email,
-          amount:    10000,
+          amount:    5000,
           ref:       v.paymentRef,
           date:      v.createdAt
         };
