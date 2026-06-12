@@ -7,16 +7,13 @@ const Course = require('../models/Course');
 const User   = require('../models/User');
 
 // ================================================
-//   HELPER: Paystack API request
+//   PAYSTACK API HELPER
 // ================================================
 
 function paystackRequest(path, method, data) {
   return new Promise(function (resolve, reject) {
-    var bodyStr = '';
-
-    if (data && method !== 'GET') {
-      bodyStr = JSON.stringify(data);
-    }
+    var bodyStr = (data && method !== 'GET')
+      ? JSON.stringify(data) : '';
 
     var options = {
       hostname: 'api.paystack.co',
@@ -25,8 +22,7 @@ function paystackRequest(path, method, data) {
       method:   method,
       headers: {
         'Authorization': 'Bearer ' + process.env.PAYSTACK_SECRET_KEY,
-        'Content-Type':  'application/json',
-        'Cache-Control': 'no-cache'
+        'Content-Type':  'application/json'
       }
     };
 
@@ -34,31 +30,25 @@ function paystackRequest(path, method, data) {
       options.headers['Content-Length'] = Buffer.byteLength(bodyStr);
     }
 
-    console.log('[Paystack] ' + method + ' https://api.paystack.co' + path);
+    console.log('[Paystack] ' + method + ' ' + path);
 
     var req = https.request(options, function (response) {
       var raw = '';
-      response.on('data', function (chunk) { raw += chunk; });
+      response.on('data', function (c) { raw += c; });
       response.on('end', function () {
         try {
-          var parsed = JSON.parse(raw);
-          console.log('[Paystack] Status:', parsed.status, '| Message:', parsed.message);
-          resolve(parsed);
+          resolve(JSON.parse(raw));
         } catch (e) {
-          console.error('[Paystack] Parse error. Raw:', raw.substring(0, 200));
+          console.error('[Paystack] Parse error. Raw:', raw.substring(0, 300));
           reject(new Error('Invalid Paystack response'));
         }
       });
     });
 
-    req.on('error', function (err) {
-      console.error('[Paystack] Request error:', err.message);
-      reject(err);
-    });
-
+    req.on('error', reject);
     req.setTimeout(30000, function () {
       req.destroy();
-      reject(new Error('Paystack request timed out'));
+      reject(new Error('Paystack timeout'));
     });
 
     if (bodyStr) req.write(bodyStr);
@@ -73,16 +63,14 @@ function paystackRequest(path, method, data) {
 
 const initializePayment = async function (req, res) {
   try {
-    console.log('[Payment] Initialize called');
+    console.log('[Payment] Initialize — user:', req.user.email);
     console.log('[Payment] Body:', JSON.stringify(req.body));
-    console.log('[Payment] User:', req.user.email);
 
-    var amount      = parseInt(req.body.amount)      || 0;
+    var amount      = parseInt(req.body.amount) || 0;
     var type        = (req.body.type        || '').trim();
     var description = (req.body.description || type).trim();
     var metadata    = req.body.metadata     || {};
 
-    // ---- Validate ----
     if (!amount || amount < 100) {
       return res.status(400).json({
         success: false,
@@ -93,32 +81,15 @@ const initializePayment = async function (req, res) {
     if (!type) {
       return res.status(400).json({
         success: false,
-        message: 'Payment type is required. ' +
-                 'Use: vendor_registration, ad_posting, course_purchase'
+        message: 'Payment type is required: vendor_registration | ad_posting | course_purchase'
       });
     }
 
-    if (!process.env.PAYSTACK_SECRET_KEY) {
-      return res.status(500).json({
-        success: false,
-        message: 'Payment system not configured. Contact support.'
-      });
-    }
-
-    // ---- Amount in kobo ----
-    var amountKobo = amount * 100;
-
-    // ---- Unique reference ----
-    var reference = 'IMC-' +
-      type.toUpperCase().replace(/_/g, '-') +
-      '-' + Date.now();
-
-    // ---- Callback URL ----
-    var frontendUrl = process.env.FRONTEND_URL ||
-      'https://resilient-ganache-be5b9c.netlify.app';
+    var amountKobo  = amount * 100;
+    var reference   = 'IMC-' + type.toUpperCase().replace(/_/g, '-') + '-' + Date.now();
+    var frontendUrl = process.env.FRONTEND_URL || 'https://resilient-ganache-be5b9c.netlify.app';
     var callbackUrl = frontendUrl + '/payment-success.html';
 
-    // ---- Build Paystack payload ----
     var payload = {
       email:        req.user.email,
       amount:       amountKobo,
@@ -129,47 +100,26 @@ const initializePayment = async function (req, res) {
         type:        type,
         userId:      req.user._id.toString(),
         userEmail:   req.user.email,
-        description: description,
-        custom_fields: [
-          {
-            display_name: 'Payment Type',
-            variable_name: 'payment_type',
-            value: type
-          },
-          {
-            display_name: 'Customer Email',
-            variable_name: 'customer_email',
-            value: req.user.email
-          }
-        ]
+        description: description
       })
     };
 
-    console.log('[Payment] Initializing with ref:', reference);
-    console.log('[Payment] Amount (kobo):', amountKobo);
-    console.log('[Payment] Channels:', payload.channels);
+    console.log('[Payment] Ref:', reference, '| Amount:', amount, '| Type:', type);
 
-    // ---- Call Paystack ----
-    var response = await paystackRequest(
-      '/transaction/initialize',
-      'POST',
-      payload
-    );
+    var response = await paystackRequest('/transaction/initialize', 'POST', payload);
 
     if (!response.status || !response.data) {
-      console.error('[Payment] Paystack rejected:', response.message);
+      console.error('[Payment] Paystack error:', response.message);
       return res.status(400).json({
         success: false,
-        message: response.message || 'Payment initialization failed.'
+        message: response.message || 'Paystack initialization failed.'
       });
     }
 
-    console.log('[Payment] Initialized successfully');
-    console.log('[Payment] Authorization URL:', response.data.authorization_url);
+    console.log('[Payment] Initialized OK. Ref:', response.data.reference);
 
     return res.status(200).json({
       success:          true,
-      message:          'Payment initialized.',
       authorizationUrl: response.data.authorization_url,
       accessCode:       response.data.access_code,
       reference:        response.data.reference,
@@ -181,7 +131,7 @@ const initializePayment = async function (req, res) {
     console.error('[Payment] Initialize error:', err.message);
     return res.status(500).json({
       success: false,
-      message: 'Payment initialization failed. Please try again.'
+      message: 'Payment initialization failed: ' + err.message
     });
   }
 };
@@ -193,62 +143,48 @@ const initializePayment = async function (req, res) {
 
 const verifyPayment = async function (req, res) {
   try {
-    var reference = (req.body.reference || '').trim();
-    var type      = (req.body.type      || '').trim();
+    var reference  = (req.body.reference  || '').trim();
+    var type       = (req.body.type       || '').trim();
+    var vendorForm = req.body.vendorForm  || null;
 
-    console.log('[Payment] Verify called');
-    console.log('[Payment] Reference:', reference);
-    console.log('[Payment] Type:', type);
-    console.log('[Payment] User:', req.user.email);
+    console.log('[Payment] Verify — ref:', reference, '| type:', type);
+    console.log('[Payment] vendorForm present:', vendorForm ? 'YES' : 'NO');
 
     if (!reference) {
       return res.status(400).json({
-        success: false,
-        message: 'Payment reference is required.'
+        success: false, message: 'Payment reference is required.'
       });
     }
 
-    // ---- Verify with Paystack ----
+    // Verify with Paystack
     var response = await paystackRequest(
       '/transaction/verify/' + encodeURIComponent(reference),
-      'GET',
-      null
+      'GET', null
     );
 
     if (!response.status || !response.data) {
       return res.status(400).json({
-        success: false,
-        message: 'Could not verify payment. Please try again.'
+        success: false, message: 'Could not verify with Paystack.'
       });
     }
 
-    var transaction = response.data;
-    console.log('[Payment] Transaction status:', transaction.status);
-    console.log('[Payment] Amount paid (kobo):', transaction.amount);
+    var tx = response.data;
+    console.log('[Payment] Paystack status:', tx.status, '| Amount:', tx.amount / 100);
 
-    if (transaction.status !== 'success') {
+    if (tx.status !== 'success') {
       return res.status(400).json({
         success: false,
-        message: 'Payment not completed yet. ' +
-                 'Status: ' + transaction.status +
-                 '. Please complete the transfer and try again.'
+        message: 'Payment not completed. Status: ' + tx.status + '. Please complete the transfer.'
       });
     }
 
-    var amountPaid = transaction.amount / 100;
-    var metadata   = transaction.metadata || {};
+    var amountPaid = tx.amount / 100;
+    var metadata   = tx.metadata || {};
     var finalType  = type || metadata.type || '';
 
-    console.log('[Payment] Payment successful! Amount: ₦' + amountPaid);
-    console.log('[Payment] Updating record for type:', finalType);
-
-    // ---- Update database ----
-    var updateResult = await updateRecordAfterPayment(
-      finalType,
-      reference,
-      req.user,
-      amountPaid,
-      metadata
+    // Run the correct post-payment action
+    var result = await handlePaymentSuccess(
+      finalType, reference, req.user, amountPaid, metadata, vendorForm
     );
 
     return res.status(200).json({
@@ -256,58 +192,131 @@ const verifyPayment = async function (req, res) {
       message:      'Payment verified! ₦' + amountPaid.toLocaleString() + ' confirmed.',
       reference:    reference,
       amount:       amountPaid,
-      paidAt:       transaction.paid_at,
-      updateResult: updateResult
+      paidAt:       tx.paid_at,
+      updateResult: result
     });
 
   } catch (err) {
     console.error('[Payment] Verify error:', err.message);
     return res.status(500).json({
-      success: false,
-      message: 'Verification failed. Please try again.'
+      success: false, message: 'Verification failed: ' + err.message
     });
   }
 };
 
 // ================================================
-//   UPDATE DATABASE AFTER PAYMENT
+//   HANDLE PAYMENT SUCCESS
+//   Central handler for ALL payment types
 // ================================================
 
-async function updateRecordAfterPayment(type, reference, user, amount, metadata) {
-  console.log('[Payment] Updating DB. Type:', type);
+async function handlePaymentSuccess(type, reference, user, amount, metadata, vendorForm) {
+  console.log('[Payment] handlePaymentSuccess — type:', type, '| user:', user.email);
 
   try {
-    // ---- Vendor Registration ----
+
+    // ============================================
+    //   VENDOR REGISTRATION
+    // ============================================
     if (type === 'vendor_registration') {
-      var vendor = await Vendor.findOneAndUpdate(
-        { user: user._id },
-        { paymentStatus: 'paid', paymentRef: reference },
-        { new: true }
-      );
-      console.log('[Payment] Vendor updated:', vendor ? vendor.bizName : 'not found');
-      return {
-        updated:     'vendor',
-        bizName:     vendor ? vendor.bizName : 'not found',
-        redirectUrl: '/vendor-dashboard.html'
-      };
+
+      // Check if vendor already exists
+      var existingVendor = await Vendor.findOne({ user: user._id });
+
+      if (existingVendor) {
+        // Just update payment status
+        existingVendor.paymentStatus = 'paid';
+        existingVendor.paymentRef    = reference;
+        await existingVendor.save();
+        console.log('[Payment] Vendor exists, payment status updated:', existingVendor.bizName);
+        return {
+          updated:     'vendor',
+          bizName:     existingVendor.bizName,
+          redirectUrl: 'vendor-dashboard.html'
+        };
+      }
+
+      // No vendor exists — create one now
+      // Use vendorForm data if available, otherwise use metadata
+      var form = vendorForm || metadata.vendorForm || null;
+
+      if (form && form.bizName) {
+        console.log('[Payment] Creating vendor from form data...');
+        console.log('[Payment] Form:', JSON.stringify(form));
+
+        var newVendor = await Vendor.create({
+          user:          user._id,
+          fullName:      form.fullName    || user.firstName + ' ' + (user.lastName || ''),
+          email:         user.email,
+          bizName:       form.bizName,
+          university:    form.university  || '',
+          category:      form.category   || '',
+          description:   form.description || '',
+          whatsApp:      form.whatsApp   || '',
+          refCode:       form.refCode    || '',
+          paymentRef:    reference,
+          paymentStatus: 'paid',
+          status:        'pending'
+        });
+
+        // Update user role
+        await User.findByIdAndUpdate(user._id, { role: 'vendor' });
+
+        // Credit ambassador
+        if (form.refCode) {
+          await creditAmbassador(form.refCode, newVendor._id, form.bizName);
+        }
+
+        console.log('[Payment] ✅ Vendor CREATED:', newVendor.bizName, '| ID:', newVendor._id);
+
+        return {
+          updated:     'vendor',
+          bizName:     newVendor.bizName,
+          vendorId:    newVendor._id,
+          redirectUrl: 'vendor-dashboard.html'
+        };
+
+      } else {
+        // No form data — mark payment as received
+        // Frontend will prompt user to complete registration
+        console.log('[Payment] No vendor form data. Storing payment ref for later.');
+        return {
+          updated:     'vendor_payment_received',
+          note:        'Form data missing. User must complete registration.',
+          redirectUrl: 'vendor.html'
+        };
+      }
     }
 
-    // ---- Ad Posting ----
+    // ============================================
+    //   AD POSTING
+    // ============================================
     if (type === 'ad_posting') {
       var ad = await Ad.findOneAndUpdate(
         { ownerEmail: user.email, paymentStatus: 'pending' },
         { paymentStatus: 'paid', paymentRef: reference },
         { new: true, sort: { createdAt: -1 } }
       );
-      console.log('[Payment] Ad updated:', ad ? ad.title : 'not found');
-      return {
-        updated:     'ad',
-        title:       ad ? ad.title : 'not found',
-        redirectUrl: '/post-ad.html'
-      };
+
+      if (ad) {
+        console.log('[Payment] ✅ Ad payment updated:', ad.title);
+        return {
+          updated:     'ad',
+          title:       ad.title,
+          redirectUrl: 'post-ad.html'
+        };
+      } else {
+        console.log('[Payment] No pending ad found for:', user.email);
+        return {
+          updated:     'ad_not_found',
+          note:        'No pending ad found',
+          redirectUrl: 'post-ad.html'
+        };
+      }
     }
 
-    // ---- Course Purchase ----
+    // ============================================
+    //   COURSE PURCHASE
+    // ============================================
     if (type === 'course_purchase') {
       var courseId = metadata.courseId;
 
@@ -318,6 +327,7 @@ async function updateRecordAfterPayment(type, reference, user, amount, metadata)
 
       var course = await Course.findById(courseId);
       if (!course) {
+        console.log('[Payment] Course not found:', courseId);
         return { updated: 'none', reason: 'course not found' };
       }
 
@@ -334,58 +344,70 @@ async function updateRecordAfterPayment(type, reference, user, amount, metadata)
         });
         course.students = (course.students || 0) + 1;
         await course.save();
+        console.log('[Payment] ✅ Course purchase saved:', course.title);
+      } else {
+        console.log('[Payment] Course already owned:', course.title);
       }
 
-      console.log('[Payment] Course updated:', course.title);
       return {
         updated:     'course',
         title:       course.title,
         fileUrl:     course.fileUrl,
-        redirectUrl: '/online-courses.html'
+        redirectUrl: 'online-courses.html'
       };
     }
 
-    console.log('[Payment] No matching type:', type);
+    console.log('[Payment] Unknown type:', type);
     return { updated: 'none', type: type };
 
   } catch (err) {
-    console.error('[Payment] DB update error:', err.message);
+    console.error('[Payment] handlePaymentSuccess error:', err.message);
     return { error: err.message };
   }
 }
 
 // ================================================
-//   PAYSTACK WEBHOOK
+//   CREDIT AMBASSADOR REFERRAL
+// ================================================
+
+async function creditAmbassador(refCode, vendorId, bizName) {
+  try {
+    var Ambassador = require('../models/Ambassador');
+    var amb = await Ambassador.findOne({ refCode: refCode });
+    if (!amb) return;
+    amb.referrals.push({ vendorId: vendorId, vendorName: bizName, commission: 500 });
+    amb.earnings += 500;
+    await amb.save();
+    console.log('[Payment] Ambassador credited:', amb.fullName);
+  } catch (err) {
+    console.error('[Payment] Ambassador credit error:', err.message);
+  }
+}
+
+// ================================================
+//   WEBHOOK
 //   POST /api/payments/webhook
 // ================================================
 
 const handleWebhook = async function (req, res) {
   try {
-    var crypto = require('crypto');
-
-    var rawBody = req.body;
-    if (Buffer.isBuffer(rawBody)) {
-      rawBody = rawBody.toString('utf8');
-    } else {
-      rawBody = JSON.stringify(rawBody);
-    }
+    var crypto  = require('crypto');
+    var rawBody = Buffer.isBuffer(req.body)
+      ? req.body.toString('utf8')
+      : JSON.stringify(req.body);
 
     var hash = crypto
       .createHmac('sha512', process.env.PAYSTACK_SECRET_KEY || '')
       .update(rawBody)
       .digest('hex');
 
-    var signature = req.headers['x-paystack-signature'];
-
-    if (!signature || hash !== signature) {
-      console.log('[Webhook] Invalid signature — ignoring');
+    if (hash !== req.headers['x-paystack-signature']) {
+      console.log('[Webhook] Invalid signature');
       return res.status(400).send('Invalid signature');
     }
 
     var event;
-    try {
-      event = JSON.parse(rawBody);
-    } catch (e) {
+    try { event = JSON.parse(rawBody); } catch (e) {
       return res.status(400).send('Invalid JSON');
     }
 
@@ -399,26 +421,24 @@ const handleWebhook = async function (req, res) {
       var reference = data.reference;
       var amount    = data.amount / 100;
 
-      var user = await User.findOne({ email: userEmail });
+      console.log('[Webhook] type:', type, '| email:', userEmail, '| ref:', reference);
 
+      var user = await User.findOne({ email: userEmail });
       if (user) {
-        await updateRecordAfterPayment(type, reference, user, amount, metadata);
-        console.log('[Webhook] Record updated for:', userEmail, '| Type:', type);
+        // Pass vendorForm from metadata if available
+        var vendorForm = metadata.vendorForm || null;
+        await handlePaymentSuccess(type, reference, user, amount, metadata, vendorForm);
+        console.log('[Webhook] ✅ Processed for:', userEmail);
       } else {
         console.log('[Webhook] User not found:', userEmail);
       }
     }
 
     return res.status(200).json({ received: true });
-
   } catch (err) {
     console.error('[Webhook] Error:', err.message);
     return res.status(200).json({ received: true });
   }
 };
 
-module.exports = {
-  initializePayment,
-  verifyPayment,
-  handleWebhook
-};
+module.exports = { initializePayment, verifyPayment, handleWebhook };

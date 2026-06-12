@@ -66,6 +66,9 @@ const getMyAds = async function (req, res) {
 
 const submitAd = async function (req, res) {
   try {
+    console.log('[Ad] submitAd called by:', req.user.email);
+    console.log('[Ad] Body:', JSON.stringify(req.body));
+
     var title       = (req.body.title       || '').trim();
     var category    = (req.body.category    || '').trim();
     var description = (req.body.description || '').trim();
@@ -75,44 +78,34 @@ const submitAd = async function (req, res) {
     var duration    = parseInt(req.body.duration) || 7;
     var paymentRef  = (req.body.paymentRef  || '').trim();
 
-    // Validate
-    if (!title) {
+    var missing = [];
+    if (!title)       missing.push('title');
+    if (!category)    missing.push('category');
+    if (!description) missing.push('description');
+    if (!location)    missing.push('location');
+    if (!contact)     missing.push('contact');
+
+    if (missing.length > 0) {
       return res.status(400).json({
-        success: false, message: 'Ad title is required.'
-      });
-    }
-    if (!category) {
-      return res.status(400).json({
-        success: false, message: 'Category is required.'
-      });
-    }
-    if (!description) {
-      return res.status(400).json({
-        success: false, message: 'Description is required.'
-      });
-    }
-    if (!location) {
-      return res.status(400).json({
-        success: false, message: 'Location is required.'
-      });
-    }
-    if (!contact) {
-      return res.status(400).json({
-        success: false, message: 'Contact number is required.'
+        success: false,
+        message: 'Missing fields: ' + missing.join(', ')
       });
     }
 
-    // Pricing based on duration
     var priceMap = { 7: 2000, 14: 3500, 30: 6000 };
     var price    = priceMap[duration] || 2000;
 
-    // Calculate expiry date
     var expiryDate = new Date();
     expiryDate.setDate(expiryDate.getDate() + duration);
 
+    var ownerName = (req.user.firstName || '') + ' ' +
+                    (req.user.lastName  || '');
+
+    console.log('[Ad] Creating ad document...');
+
     var ad = await Ad.create({
       owner:         req.user._id,
-      ownerName:     req.user.firstName + ' ' + (req.user.lastName || ''),
+      ownerName:     ownerName.trim(),
       ownerEmail:    req.user.email,
       title:         title,
       category:      category,
@@ -128,16 +121,20 @@ const submitAd = async function (req, res) {
       expiryDate:    expiryDate
     });
 
+    console.log('[Ad] ✅ Ad created! ID:', ad._id, '| title:', ad.title);
+
     return res.status(201).json({
       success: true,
-      message: 'Ad submitted successfully! Pending admin approval.',
+      message: 'Ad submitted! Pending admin approval.',
       ad:      ad
     });
+
   } catch (err) {
-    console.error('Submit ad error:', err.message);
+    console.error('[Ad] submitAd error:', err.message);
+    console.error('[Ad] Stack:', err.stack);
     return res.status(500).json({
       success: false,
-      message: err.message
+      message: 'Ad submission failed: ' + err.message
     });
   }
 };

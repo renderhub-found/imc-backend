@@ -8,11 +8,17 @@ const User       = require('../models/User');
 // POST /api/ambassadors/register
 const registerAmbassador = async function (req, res) {
   try {
-    var existing = await Ambassador.findOne({ user: req.user._id });
+    var userId = req.user._id;
+
+    console.log('[Ambassador] Register called by:', req.user.email);
+    console.log('[Ambassador] Body:', JSON.stringify(req.body));
+
+    var existing = await Ambassador.findOne({ user: userId });
     if (existing) {
-      return res.status(400).json({
-        success: false,
-        message: 'Already registered as ambassador.',
+      console.log('[Ambassador] Already registered:', existing.username);
+      return res.status(200).json({
+        success:    true,
+        message:    'Already registered as ambassador.',
         ambassador: existing
       });
     }
@@ -24,25 +30,38 @@ const registerAmbassador = async function (req, res) {
     var social     = (req.body.social     || '').trim();
     var reason     = (req.body.reason     || '').trim();
 
+    console.log('[Ambassador] fullName:', fullName);
+    console.log('[Ambassador] username:', username);
+    console.log('[Ambassador] university:', university);
+
     if (!fullName || !university || !username || !whatsApp) {
+      var missing = [];
+      if (!fullName)   missing.push('fullName');
+      if (!university) missing.push('university');
+      if (!username)   missing.push('username');
+      if (!whatsApp)   missing.push('whatsApp');
+
       return res.status(400).json({
         success: false,
-        message: 'Please fill in all required fields.'
+        message: 'Missing required fields: ' + missing.join(', ')
       });
     }
 
+    // Check username taken
     var taken = await Ambassador.findOne({ username: username });
     if (taken) {
       return res.status(400).json({
         success: false,
-        message: 'Username already taken.'
+        message: 'Username "' + username + '" is already taken.'
       });
     }
 
     var refCode = 'AMB-' + username.toUpperCase();
 
+    console.log('[Ambassador] Creating ambassador document...');
+
     var ambassador = await Ambassador.create({
-      user:       req.user._id,
+      user:       userId,
       fullName:   fullName,
       email:      req.user.email,
       username:   username,
@@ -50,26 +69,38 @@ const registerAmbassador = async function (req, res) {
       whatsApp:   whatsApp,
       social:     social,
       reason:     reason,
-      refCode:    refCode
+      refCode:    refCode,
+      earnings:   0,
+      referrals:  [],
+      withdrawals: [],
+      tasksDone:  []
     });
 
-    await User.findByIdAndUpdate(req.user._id, { role: 'ambassador' });
+    console.log('[Ambassador] ✅ Created! ID:', ambassador._id, '| refCode:', refCode);
+
+    await User.findByIdAndUpdate(userId, { role: 'ambassador' });
+    console.log('[Ambassador] User role updated to ambassador');
 
     return res.status(201).json({
       success:    true,
-      message:    'Ambassador account created!',
+      message:    'Ambassador account created! Your referral code: ' + refCode,
       ambassador: ambassador
     });
+
   } catch (err) {
-    console.error('Register ambassador error:', err.message);
+    console.error('[Ambassador] Register error:', err.message);
+    console.error('[Ambassador] Stack:', err.stack);
+
     if (err.code === 11000) {
       return res.status(400).json({
         success: false,
-        message: 'Username already taken.'
+        message: 'Username already taken. Please choose another.'
       });
     }
+
     return res.status(500).json({
-      success: false, message: err.message
+      success: false,
+      message: 'Registration failed: ' + err.message
     });
   }
 };
