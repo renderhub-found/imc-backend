@@ -20,4 +20,8 @@ router.put('/update-profile', protect, ctrl.updateProfile);
 // PUT  /api/auth/change-password
 router.put('/change-password', protect, ctrl.changePassword);
 
+router.post('/forgot-password', ctrl.forgotPassword);
+
+router.post('/reset-password',  ctrl.resetPassword);
+
 module.exports = router;
