@@ -7,13 +7,12 @@ const Course = require('../models/Course');
 const User   = require('../models/User');
 
 // ================================================
-//   PAYSTACK API HELPER
+//   PAYSTACK REQUEST HELPER
 // ================================================
 
 function paystackRequest(path, method, data) {
   return new Promise(function (resolve, reject) {
-    var bodyStr = (data && method !== 'GET')
-      ? JSON.stringify(data) : '';
+    var bodyStr = (data && method !== 'GET') ? JSON.stringify(data) : '';
 
     var options = {
       hostname: 'api.paystack.co',
@@ -39,7 +38,7 @@ function paystackRequest(path, method, data) {
         try {
           resolve(JSON.parse(raw));
         } catch (e) {
-          console.error('[Paystack] Parse error. Raw:', raw.substring(0, 300));
+          console.error('[Paystack] Parse error:', raw.substring(0, 300));
           reject(new Error('Invalid Paystack response'));
         }
       });
@@ -63,8 +62,8 @@ function paystackRequest(path, method, data) {
 
 const initializePayment = async function (req, res) {
   try {
-    console.log('[Payment] Initialize — user:', req.user.email);
-    console.log('[Payment] Body:', JSON.stringify(req.body));
+    console.log('[Payment] initialize — user:', req.user.email);
+    console.log('[Payment] body:', JSON.stringify(req.body));
 
     var amount      = parseInt(req.body.amount) || 0;
     var type        = (req.body.type        || '').trim();
@@ -73,21 +72,20 @@ const initializePayment = async function (req, res) {
 
     if (!amount || amount < 100) {
       return res.status(400).json({
-        success: false,
-        message: 'Amount must be at least ₦100.'
+        success: false, message: 'Amount must be at least ₦100.'
       });
     }
-
     if (!type) {
       return res.status(400).json({
         success: false,
-        message: 'Payment type is required: vendor_registration | ad_posting | course_purchase'
+        message: 'type is required: vendor_registration | ad_posting | course_purchase'
       });
     }
 
     var amountKobo  = amount * 100;
     var reference   = 'IMC-' + type.toUpperCase().replace(/_/g, '-') + '-' + Date.now();
-    var frontendUrl = process.env.FRONTEND_URL || 'https://resilient-ganache-be5b9c.netlify.app';
+    var frontendUrl = process.env.FRONTEND_URL ||
+      'https://resilient-ganache-be5b9c.netlify.app';
     var callbackUrl = frontendUrl + '/payment-success.html';
 
     var payload = {
@@ -104,21 +102,20 @@ const initializePayment = async function (req, res) {
       })
     };
 
-    console.log('[Payment] Ref:', reference, '| Amount:', amount, '| Type:', type);
+    console.log('[Payment] ref:', reference, '| type:', type, '| amount: ₦' + amount);
 
     var response = await paystackRequest('/transaction/initialize', 'POST', payload);
 
     if (!response.status || !response.data) {
-      console.error('[Payment] Paystack error:', response.message);
+      console.error('[Payment] Paystack rejected:', response.message);
       return res.status(400).json({
-        success: false,
-        message: response.message || 'Paystack initialization failed.'
+        success: false, message: response.message || 'Paystack initialization failed.'
       });
     }
 
-    console.log('[Payment] Initialized OK. Ref:', response.data.reference);
+    console.log('[Payment] ✅ Initialized. Ref:', response.data.reference);
 
-    return res.status(200).json({
+    return res.json({
       success:          true,
       authorizationUrl: response.data.authorization_url,
       accessCode:       response.data.access_code,
@@ -128,10 +125,9 @@ const initializePayment = async function (req, res) {
     });
 
   } catch (err) {
-    console.error('[Payment] Initialize error:', err.message);
+    console.error('[Payment] initialize error:', err.message);
     return res.status(500).json({
-      success: false,
-      message: 'Payment initialization failed: ' + err.message
+      success: false, message: 'Payment initialization failed: ' + err.message
     });
   }
 };
@@ -146,9 +142,10 @@ const verifyPayment = async function (req, res) {
     var reference  = (req.body.reference  || '').trim();
     var type       = (req.body.type       || '').trim();
     var vendorForm = req.body.vendorForm  || null;
+    var metadata   = req.body.metadata   || {};
 
-    console.log('[Payment] Verify — ref:', reference, '| type:', type);
-    console.log('[Payment] vendorForm present:', vendorForm ? 'YES' : 'NO');
+    console.log('[Payment] verify — ref:', reference, '| type:', type);
+    console.log('[Payment] vendorForm:', vendorForm ? 'PRESENT' : 'MISSING');
 
     if (!reference) {
       return res.status(400).json({
@@ -156,7 +153,6 @@ const verifyPayment = async function (req, res) {
       });
     }
 
-    // Verify with Paystack
     var response = await paystackRequest(
       '/transaction/verify/' + encodeURIComponent(reference),
       'GET', null
@@ -169,25 +165,28 @@ const verifyPayment = async function (req, res) {
     }
 
     var tx = response.data;
-    console.log('[Payment] Paystack status:', tx.status, '| Amount:', tx.amount / 100);
+    console.log('[Payment] Paystack status:', tx.status, '| ₦' + tx.amount / 100);
 
     if (tx.status !== 'success') {
       return res.status(400).json({
         success: false,
-        message: 'Payment not completed. Status: ' + tx.status + '. Please complete the transfer.'
+        message: 'Payment not completed. Status: ' + tx.status
       });
     }
 
     var amountPaid = tx.amount / 100;
-    var metadata   = tx.metadata || {};
-    var finalType  = type || metadata.type || '';
+    var txMeta     = tx.metadata || {};
+    var finalType  = type || txMeta.type || '';
 
-    // Run the correct post-payment action
-    var result = await handlePaymentSuccess(
-      finalType, reference, req.user, amountPaid, metadata, vendorForm
+    // Merge metadata
+    var mergedMeta = Object.assign({}, txMeta, metadata);
+    if (vendorForm) mergedMeta.vendorForm = vendorForm;
+
+    var result = await processPayment(
+      finalType, reference, req.user, amountPaid, mergedMeta
     );
 
-    return res.status(200).json({
+    return res.json({
       success:      true,
       message:      'Payment verified! ₦' + amountPaid.toLocaleString() + ' confirmed.',
       reference:    reference,
@@ -197,7 +196,7 @@ const verifyPayment = async function (req, res) {
     });
 
   } catch (err) {
-    console.error('[Payment] Verify error:', err.message);
+    console.error('[Payment] verify error:', err.message);
     return res.status(500).json({
       success: false, message: 'Verification failed: ' + err.message
     });
@@ -205,182 +204,174 @@ const verifyPayment = async function (req, res) {
 };
 
 // ================================================
-//   HANDLE PAYMENT SUCCESS
-//   Central handler for ALL payment types
+//   PROCESS PAYMENT — creates/updates records
 // ================================================
 
-async function handlePaymentSuccess(type, reference, user, amount, metadata, vendorForm) {
-  console.log('[Payment] handlePaymentSuccess — type:', type, '| user:', user.email);
+async function processPayment(type, reference, user, amount, metadata) {
+  console.log('[Payment] processPayment — type:', type, '| user:', user.email);
 
-  try {
+  // ---- VENDOR REGISTRATION ----
+  if (type === 'vendor_registration') {
 
-    // ============================================
-    //   VENDOR REGISTRATION
-    // ============================================
-    if (type === 'vendor_registration') {
+    var existingVendor = await Vendor.findOne({ user: user._id });
 
-      // Check if vendor already exists
-      var existingVendor = await Vendor.findOne({ user: user._id });
-
-      if (existingVendor) {
-        // Just update payment status
-        existingVendor.paymentStatus = 'paid';
-        existingVendor.paymentRef    = reference;
-        await existingVendor.save();
-        console.log('[Payment] Vendor exists, payment status updated:', existingVendor.bizName);
-        return {
-          updated:     'vendor',
-          bizName:     existingVendor.bizName,
-          redirectUrl: 'vendor-dashboard.html'
-        };
-      }
-
-      // No vendor exists — create one now
-      // Use vendorForm data if available, otherwise use metadata
-      var form = vendorForm || metadata.vendorForm || null;
-
-      if (form && form.bizName) {
-        console.log('[Payment] Creating vendor from form data...');
-        console.log('[Payment] Form:', JSON.stringify(form));
-
-        var newVendor = await Vendor.create({
-          user:          user._id,
-          fullName:      form.fullName    || user.firstName + ' ' + (user.lastName || ''),
-          email:         user.email,
-          bizName:       form.bizName,
-          university:    form.university  || '',
-          category:      form.category   || '',
-          description:   form.description || '',
-          whatsApp:      form.whatsApp   || '',
-          refCode:       form.refCode    || '',
-          paymentRef:    reference,
-          paymentStatus: 'paid',
-          status:        'pending'
-        });
-
-        // Update user role
-        await User.findByIdAndUpdate(user._id, { role: 'vendor' });
-
-        // Credit ambassador
-        if (form.refCode) {
-          await creditAmbassador(form.refCode, newVendor._id, form.bizName);
-        }
-
-        console.log('[Payment] ✅ Vendor CREATED:', newVendor.bizName, '| ID:', newVendor._id);
-
-        return {
-          updated:     'vendor',
-          bizName:     newVendor.bizName,
-          vendorId:    newVendor._id,
-          redirectUrl: 'vendor-dashboard.html'
-        };
-
-      } else {
-        // No form data — mark payment as received
-        // Frontend will prompt user to complete registration
-        console.log('[Payment] No vendor form data. Storing payment ref for later.');
-        return {
-          updated:     'vendor_payment_received',
-          note:        'Form data missing. User must complete registration.',
-          redirectUrl: 'vendor.html'
-        };
-      }
-    }
-
-    // ============================================
-    //   AD POSTING
-    // ============================================
-    if (type === 'ad_posting') {
-      var ad = await Ad.findOneAndUpdate(
-        { ownerEmail: user.email, paymentStatus: 'pending' },
-        { paymentStatus: 'paid', paymentRef: reference },
-        { new: true, sort: { createdAt: -1 } }
-      );
-
-      if (ad) {
-        console.log('[Payment] ✅ Ad payment updated:', ad.title);
-        return {
-          updated:     'ad',
-          title:       ad.title,
-          redirectUrl: 'post-ad.html'
-        };
-      } else {
-        console.log('[Payment] No pending ad found for:', user.email);
-        return {
-          updated:     'ad_not_found',
-          note:        'No pending ad found',
-          redirectUrl: 'post-ad.html'
-        };
-      }
-    }
-
-    // ============================================
-    //   COURSE PURCHASE
-    // ============================================
-    if (type === 'course_purchase') {
-      var courseId = metadata.courseId;
-
-      if (!courseId) {
-        console.log('[Payment] courseId missing from metadata');
-        return { updated: 'none', reason: 'courseId missing' };
-      }
-
-      var course = await Course.findById(courseId);
-      if (!course) {
-        console.log('[Payment] Course not found:', courseId);
-        return { updated: 'none', reason: 'course not found' };
-      }
-
-      var alreadyOwned = course.purchases.find(function (p) {
-        return p.userEmail === user.email;
-      });
-
-      if (!alreadyOwned) {
-        course.purchases.push({
-          user:       user._id,
-          userEmail:  user.email,
-          amount:     amount,
-          paymentRef: reference
-        });
-        course.students = (course.students || 0) + 1;
-        await course.save();
-        console.log('[Payment] ✅ Course purchase saved:', course.title);
-      } else {
-        console.log('[Payment] Course already owned:', course.title);
-      }
-
+    if (existingVendor) {
+      existingVendor.paymentStatus = 'paid';
+      existingVendor.paymentRef    = reference;
+      await existingVendor.save();
+      console.log('[Payment] ✅ Vendor payment updated:', existingVendor.bizName);
       return {
-        updated:     'course',
-        title:       course.title,
-        fileUrl:     course.fileUrl,
-        redirectUrl: 'online-courses.html'
+        updated: 'vendor', bizName: existingVendor.bizName,
+        redirectUrl: 'vendor-dashboard.html'
       };
     }
 
-    console.log('[Payment] Unknown type:', type);
-    return { updated: 'none', type: type };
+    // No vendor yet — create from vendorForm
+    var form = metadata.vendorForm || null;
 
-  } catch (err) {
-    console.error('[Payment] handlePaymentSuccess error:', err.message);
-    return { error: err.message };
+    if (form && form.bizName) {
+      console.log('[Payment] Creating vendor from form...');
+
+      var newVendor = await Vendor.create({
+        user:          user._id,
+        fullName:      form.fullName    || (user.firstName + ' ' + (user.lastName || '')),
+        email:         user.email,
+        bizName:       form.bizName,
+        university:    form.university  || '',
+        category:      form.category   || '',
+        description:   form.description || '',
+        whatsApp:      form.whatsApp   || '',
+        refCode:       form.refCode    || '',
+        paymentRef:    reference,
+        paymentStatus: 'paid',
+        status:        'pending'
+      });
+
+      await User.findByIdAndUpdate(user._id, { role: 'vendor' });
+
+      if (form.refCode) {
+        await creditAmbassadorReferral(form.refCode, newVendor._id, form.bizName);
+      }
+
+      console.log('[Payment] ✅ Vendor CREATED via processPayment:', newVendor.bizName);
+      return {
+        updated: 'vendor', bizName: newVendor.bizName,
+        redirectUrl: 'vendor-dashboard.html'
+      };
+    }
+
+    console.log('[Payment] Vendor form missing — payment stored, awaiting form');
+    return {
+      updated: 'vendor_payment_only',
+      note:    'Vendor will be created when form is submitted'
+    };
   }
+
+  // ---- AD POSTING ----
+  if (type === 'ad_posting') {
+    var ad = await Ad.findOneAndUpdate(
+      { ownerEmail: user.email, paymentStatus: 'pending' },
+      { paymentStatus: 'paid', paymentRef: reference },
+      { new: true, sort: { createdAt: -1 } }
+    );
+
+    if (ad) {
+      console.log('[Payment] ✅ Ad payment updated:', ad.title);
+      return { updated: 'ad', title: ad.title, redirectUrl: 'post-ad.html' };
+    }
+
+    console.log('[Payment] No pending ad — creating from metadata');
+    var adForm = metadata.adForm || null;
+
+    if (adForm && adForm.title) {
+      var priceMap   = { 7: 2000, 14: 3500, 30: 6000 };
+      var duration   = parseInt(adForm.duration) || 7;
+      var expiry     = new Date();
+      expiry.setDate(expiry.getDate() + duration);
+
+      var newAd = await Ad.create({
+        owner:         user._id,
+        ownerName:     adForm.ownerName || user.firstName,
+        ownerEmail:    user.email,
+        title:         adForm.title,
+        category:      adForm.category    || '',
+        description:   adForm.description || '',
+        location:      adForm.location    || '',
+        contact:       adForm.contact     || '',
+        image:         adForm.image       || '',
+        duration:      duration,
+        price:         priceMap[duration] || 2000,
+        paymentRef:    reference,
+        paymentStatus: 'paid',
+        status:        'pending',
+        expiryDate:    expiry
+      });
+
+      console.log('[Payment] ✅ Ad CREATED via processPayment:', newAd.title);
+      return { updated: 'ad', title: newAd.title, redirectUrl: 'post-ad.html' };
+    }
+
+    return { updated: 'ad_not_found' };
+  }
+
+  // ---- COURSE PURCHASE ----
+  if (type === 'course_purchase') {
+    var courseId = metadata.courseId;
+    if (!courseId) {
+      console.log('[Payment] courseId missing');
+      return { updated: 'none', reason: 'courseId missing' };
+    }
+
+    var course = await Course.findById(courseId);
+    if (!course) {
+      console.log('[Payment] Course not found:', courseId);
+      return { updated: 'none', reason: 'course not found' };
+    }
+
+    var alreadyOwned = course.purchases.find(function (p) {
+      return p.userEmail === user.email;
+    });
+
+    if (!alreadyOwned) {
+      course.purchases.push({
+        user: user._id, userEmail: user.email,
+        amount: amount, paymentRef: reference
+      });
+      course.students = (course.students || 0) + 1;
+      await course.save();
+      console.log('[Payment] ✅ Course purchase saved:', course.title);
+    } else {
+      console.log('[Payment] Course already owned:', course.title);
+    }
+
+    return {
+      updated: 'course', title: course.title,
+      fileUrl: course.fileUrl, redirectUrl: 'online-courses.html'
+    };
+  }
+
+  console.log('[Payment] Unknown type:', type);
+  return { updated: 'none', type: type };
 }
 
 // ================================================
 //   CREDIT AMBASSADOR REFERRAL
 // ================================================
 
-async function creditAmbassador(refCode, vendorId, bizName) {
+async function creditAmbassadorReferral(refCode, vendorId, bizName) {
   try {
     var Ambassador = require('../models/Ambassador');
     var amb = await Ambassador.findOne({ refCode: refCode });
-    if (!amb) return;
+    if (!amb) {
+      console.log('[Payment] Referral code not found:', refCode);
+      return;
+    }
     amb.referrals.push({ vendorId: vendorId, vendorName: bizName, commission: 500 });
     amb.earnings += 500;
     await amb.save();
-    console.log('[Payment] Ambassador credited:', amb.fullName);
+    console.log('[Payment] ✅ Ambassador credited:', amb.fullName, '| ₦500');
   } catch (err) {
-    console.error('[Payment] Ambassador credit error:', err.message);
+    console.error('[Payment] creditAmbassadorReferral:', err.message);
   }
 }
 
@@ -415,19 +406,18 @@ const handleWebhook = async function (req, res) {
 
     if (event.event === 'charge.success') {
       var data      = event.data;
-      var metadata  = data.metadata     || {};
-      var type      = metadata.type     || '';
-      var userEmail = metadata.userEmail || (data.customer && data.customer.email) || '';
+      var metadata  = data.metadata   || {};
+      var type      = metadata.type   || '';
+      var userEmail = metadata.userEmail ||
+        (data.customer && data.customer.email) || '';
       var reference = data.reference;
       var amount    = data.amount / 100;
 
-      console.log('[Webhook] type:', type, '| email:', userEmail, '| ref:', reference);
+      console.log('[Webhook] type:', type, '| email:', userEmail, '| ₦' + amount);
 
       var user = await User.findOne({ email: userEmail });
       if (user) {
-        // Pass vendorForm from metadata if available
-        var vendorForm = metadata.vendorForm || null;
-        await handlePaymentSuccess(type, reference, user, amount, metadata, vendorForm);
+        await processPayment(type, reference, user, amount, metadata);
         console.log('[Webhook] ✅ Processed for:', userEmail);
       } else {
         console.log('[Webhook] User not found:', userEmail);
@@ -436,7 +426,7 @@ const handleWebhook = async function (req, res) {
 
     return res.status(200).json({ received: true });
   } catch (err) {
-    console.error('[Webhook] Error:', err.message);
+    console.error('[Webhook] error:', err.message);
     return res.status(200).json({ received: true });
   }
 };

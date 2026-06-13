@@ -1,15 +1,16 @@
-// ================================================
-//   VENDOR CONTROLLER
-// ================================================
+'use strict';
 
 const Vendor = require('../models/Vendor');
 const User   = require('../models/User');
 
-// GET /api/vendors
+// ================================================
+//   GET ALL VENDORS — Public
+//   GET /api/vendors
+// ================================================
+
 const getAllVendors = async function (req, res) {
   try {
     var filter = { status: 'approved' };
-
     if (req.query.category) {
       filter.category = new RegExp(req.query.category, 'i');
     }
@@ -17,7 +18,7 @@ const getAllVendors = async function (req, res) {
       filter.university = new RegExp(req.query.university, 'i');
     }
     if (req.query.search) {
-      var q    = new RegExp(req.query.search, 'i');
+      var q = new RegExp(req.query.search, 'i');
       filter.$or = [
         { bizName: q }, { category: q },
         { university: q }, { description: q }
@@ -28,105 +29,96 @@ const getAllVendors = async function (req, res) {
       .select('-products')
       .sort({ createdAt: -1 });
 
-    return res.status(200).json({
-      success: true,
-      count:   vendors.length,
-      vendors: vendors
-    });
+    return res.json({ success: true, count: vendors.length, vendors: vendors });
   } catch (err) {
-    console.error('Get vendors error:', err.message);
-    return res.status(500).json({
-      success: false,
-      message: err.message
-    });
+    console.error('[Vendor] getAllVendors:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// GET /api/vendors/my-profile
-const getMyVendorProfile = async function (req, res) {
-  try {
-    var vendor = await Vendor.findOne({ user: req.user._id });
+// ================================================
+//   GET ALL PRODUCTS — Public
+//   GET /api/vendors/products/all
+// ================================================
 
-    if (!vendor) {
-      return res.status(200).json({
-        success:  true,
-        isVendor: false,
-        message:  'Not registered as vendor yet.',
-        vendor:   null
-      });
-    }
-
-    return res.status(200).json({
-      success:  true,
-      isVendor: true,
-      vendor:   vendor
-    });
-  } catch (err) {
-    console.error('Get my vendor error:', err.message);
-    return res.status(500).json({
-      success: false,
-      message: err.message
-    });
-  }
-};
-
-// GET /api/vendors/products/all
 const getAllProducts = async function (req, res) {
   try {
     var vendors = await Vendor.find({ status: 'approved' })
       .select('bizName university category products');
 
-    var allProducts = [];
+    var all = [];
     vendors.forEach(function (v) {
       v.products.forEach(function (p) {
-        allProducts.push({
-          _id:         p._id,
-          name:        p.name,
-          price:       p.price,
-          description: p.description,
-          image:       p.image,
-          video:       p.video,
-          category:    p.category || v.category,
-          vendorId:    v._id,
-          vendorName:  v.bizName,
-          university:  v.university
+        all.push({
+          _id:        p._id,
+          name:       p.name,
+          price:      p.price,
+          description:p.description,
+          image:      p.image,
+          video:      p.video,
+          category:   p.category || v.category,
+          vendorId:   v._id,
+          vendorName: v.bizName,
+          university: v.university
         });
       });
     });
 
-    return res.status(200).json({
-      success:  true,
-      count:    allProducts.length,
-      products: allProducts
-    });
+    return res.json({ success: true, count: all.length, products: all });
   } catch (err) {
-    console.error('Get all products error:', err.message);
-    return res.status(500).json({
-      success: false,
-      message: err.message
-    });
+    console.error('[Vendor] getAllProducts:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// POST /api/vendors/register
+// ================================================
+//   GET MY VENDOR PROFILE — Protected
+//   GET /api/vendors/my-profile
+// ================================================
+
+const getMyVendorProfile = async function (req, res) {
+  try {
+    console.log('[Vendor] getMyVendorProfile — user:', req.user.email);
+
+    var vendor = await Vendor.findOne({ user: req.user._id });
+
+    if (!vendor) {
+      return res.json({
+        success:  true,
+        isVendor: false,
+        vendor:   null
+      });
+    }
+
+    return res.json({
+      success:  true,
+      isVendor: true,
+      vendor:   vendor
+    });
+  } catch (err) {
+    console.error('[Vendor] getMyVendorProfile:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ================================================
+//   REGISTER VENDOR — Protected
+//   POST /api/vendors/register
+// ================================================
+
 const registerVendor = async function (req, res) {
   try {
-    var userId = req.user._id;
+    console.log('[Vendor] registerVendor — user:', req.user.email);
+    console.log('[Vendor] body:', JSON.stringify(req.body));
 
-    console.log('[registerVendor] Called by:', req.user.email);
-    console.log('[registerVendor] Body:', JSON.stringify(req.body));
-
-    // Check if already a vendor
-    var existingVendor = await Vendor.findOne({ user: userId });
-
-    if (existingVendor) {
-      console.log('[registerVendor] Already a vendor:', existingVendor.bizName);
-
-      // If already paid and exists — just return it
-      return res.status(200).json({
-        success: true,
-        message: 'Already registered as a vendor.',
-        vendor:  existingVendor,
+    // Already a vendor?
+    var existing = await Vendor.findOne({ user: req.user._id });
+    if (existing) {
+      console.log('[Vendor] Already exists:', existing.bizName);
+      return res.json({
+        success:       true,
+        message:       'Already registered as a vendor.',
+        vendor:        existing,
         alreadyExists: true
       });
     }
@@ -140,7 +132,6 @@ const registerVendor = async function (req, res) {
     var refCode     = (req.body.refCode     || '').trim();
     var paymentRef  = (req.body.paymentRef  || '').trim();
 
-    // Validate required fields
     var missing = [];
     if (!fullName)    missing.push('fullName');
     if (!bizName)     missing.push('bizName');
@@ -150,17 +141,17 @@ const registerVendor = async function (req, res) {
     if (!whatsApp)    missing.push('whatsApp');
 
     if (missing.length > 0) {
-      console.log('[registerVendor] Missing fields:', missing);
+      console.log('[Vendor] Missing fields:', missing);
       return res.status(400).json({
         success: false,
         message: 'Missing required fields: ' + missing.join(', ')
       });
     }
 
-    console.log('[registerVendor] Creating vendor document...');
+    console.log('[Vendor] Creating document...');
 
     var vendor = await Vendor.create({
-      user:          userId,
+      user:          req.user._id,
       fullName:      fullName,
       email:         req.user.email,
       bizName:       bizName,
@@ -174,30 +165,13 @@ const registerVendor = async function (req, res) {
       status:        'pending'
     });
 
-    console.log('[registerVendor] Vendor created! ID:', vendor._id);
+    console.log('[Vendor] ✅ Created! ID:', vendor._id);
 
-    // Update user role to vendor
-    await User.findByIdAndUpdate(userId, { role: 'vendor' });
-    console.log('[registerVendor] User role updated to vendor');
+    await User.findByIdAndUpdate(req.user._id, { role: 'vendor' });
+    console.log('[Vendor] User role → vendor');
 
-    // Credit ambassador referral
     if (refCode) {
-      try {
-        var Ambassador = require('../models/Ambassador');
-        var amb = await Ambassador.findOne({ refCode: refCode });
-        if (amb) {
-          amb.referrals.push({
-            vendorId:   vendor._id,
-            vendorName: bizName,
-            commission: 2000
-          });
-          amb.earnings += 2000;
-          await amb.save();
-          console.log('[registerVendor] Ambassador credited:', amb.fullName);
-        }
-      } catch (refErr) {
-        console.log('[registerVendor] Referral credit failed:', refErr.message);
-      }
+      await creditAmbassador(refCode, vendor._id, bizName);
     }
 
     return res.status(201).json({
@@ -207,22 +181,26 @@ const registerVendor = async function (req, res) {
     });
 
   } catch (err) {
-    console.error('[registerVendor] Error:', err.message);
+    console.error('[Vendor] registerVendor error:', err.message);
+    console.error('[Vendor] stack:', err.stack);
     return res.status(500).json({
       success: false,
-      message: 'Vendor registration failed: ' + err.message
+      message: 'Registration failed: ' + err.message
     });
   }
 };
 
-// POST /api/vendors/products
+// ================================================
+//   ADD PRODUCT — Protected
+//   POST /api/vendors/products
+// ================================================
+
 const addProduct = async function (req, res) {
   try {
     var vendor = await Vendor.findOne({ user: req.user._id });
     if (!vendor) {
       return res.status(404).json({
-        success: false,
-        message: 'Vendor profile not found.'
+        success: false, message: 'Vendor profile not found.'
       });
     }
 
@@ -240,42 +218,32 @@ const addProduct = async function (req, res) {
       });
     }
 
-    vendor.products.push({
-      name:        name,
-      price:       price,
-      description: description,
-      image:       image,
-      video:       video,
-      category:    category
-    });
-
+    vendor.products.push({ name, price, description, image, video, category });
     await vendor.save();
 
     var added = vendor.products[vendor.products.length - 1];
-
     return res.status(201).json({
-      success:       true,
-      message:       'Product added successfully!',
-      product:       added,
-      totalProducts: vendor.products.length
+      success: true,
+      message: 'Product added!',
+      product: added,
+      total:   vendor.products.length
     });
   } catch (err) {
-    console.error('Add product error:', err.message);
-    return res.status(500).json({
-      success: false,
-      message: err.message
-    });
+    console.error('[Vendor] addProduct:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// DELETE /api/vendors/products/:productId
+// ================================================
+//   DELETE PRODUCT — Protected
+//   DELETE /api/vendors/products/:productId
+// ================================================
+
 const deleteProduct = async function (req, res) {
   try {
     var vendor = await Vendor.findOne({ user: req.user._id });
     if (!vendor) {
-      return res.status(404).json({
-        success: false, message: 'Vendor not found.'
-      });
+      return res.status(404).json({ success: false, message: 'Vendor not found.' });
     }
 
     var idx = vendor.products.findIndex(function (p) {
@@ -283,90 +251,70 @@ const deleteProduct = async function (req, res) {
     });
 
     if (idx === -1) {
-      return res.status(404).json({
-        success: false, message: 'Product not found.'
-      });
+      return res.status(404).json({ success: false, message: 'Product not found.' });
     }
 
     vendor.products.splice(idx, 1);
     await vendor.save();
 
-    return res.status(200).json({
-      success: true,
-      message: 'Product deleted.',
-      totalProducts: vendor.products.length
-    });
+    return res.json({ success: true, message: 'Product deleted.', total: vendor.products.length });
   } catch (err) {
-    console.error('Delete product error:', err.message);
-    return res.status(500).json({
-      success: false, message: err.message
-    });
+    console.error('[Vendor] deleteProduct:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// GET /api/vendors/:id
+// ================================================
+//   GET VENDOR BY ID — Public
+//   GET /api/vendors/:id
+// ================================================
+
 const getVendorById = async function (req, res) {
   try {
     var vendor = await Vendor.findById(req.params.id);
     if (!vendor) {
-      return res.status(404).json({
-        success: false, message: 'Vendor not found.'
-      });
+      return res.status(404).json({ success: false, message: 'Vendor not found.' });
     }
     vendor.profileViews = (vendor.profileViews || 0) + 1;
     await vendor.save();
-    return res.status(200).json({ success: true, vendor: vendor });
+    return res.json({ success: true, vendor: vendor });
   } catch (err) {
-    console.error('Get vendor by id error:', err.message);
-    return res.status(500).json({
-      success: false, message: err.message
-    });
+    console.error('[Vendor] getVendorById:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
-// PUT /api/vendors/update
-const updateVendorProfile = async function (req, res) {
+
+// ================================================
+//   CREDIT AMBASSADOR HELPER
+// ================================================
+
+async function creditAmbassador(refCode, vendorId, bizName) {
   try {
-    var vendor = await Vendor.findOne({ user: req.user._id });
-    if (!vendor) {
-      return res.status(404).json({
-        success: false,
-        message: 'Vendor not found.'
-      });
+    var Ambassador = require('../models/Ambassador');
+    var amb = await Ambassador.findOne({ refCode: refCode });
+    if (!amb) {
+      console.log('[Vendor] Referral code not found:', refCode);
+      return;
     }
-
-    var updates = {};
-    if (req.body.bizName)     updates.bizName     = req.body.bizName.trim();
-    if (req.body.description) updates.description = req.body.description.trim();
-    if (req.body.whatsApp)    updates.whatsApp    = req.body.whatsApp.trim();
-    if (req.body.category)    updates.category    = req.body.category.trim();
-
-    var updated = await Vendor.findByIdAndUpdate(
-      vendor._id,
-      updates,
-      { new: true }
-    );
-
-    return res.status(200).json({
-      success: true,
-      message: 'Vendor profile updated.',
-      vendor:  updated
+    amb.referrals.push({
+      vendorId:   vendorId,
+      vendorName: bizName,
+      commission: 2000
     });
+    amb.earnings += 2000;
+    await amb.save();
+    console.log('[Vendor] ✅ Ambassador credited:', amb.fullName, '+ ₦2000');
   } catch (err) {
-    console.error('Update vendor profile error:', err.message);
-    return res.status(500).json({
-      success: false,
-      message: err.message
-    });
+    console.error('[Vendor] creditAmbassador error:', err.message);
   }
-};
+}
 
 module.exports = {
   getAllVendors,
-  getMyVendorProfile,
   getAllProducts,
+  getMyVendorProfile,
   registerVendor,
   addProduct,
   deleteProduct,
-  getVendorById,
-  updateVendorProfile
+  getVendorById
 };

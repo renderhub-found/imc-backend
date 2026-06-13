@@ -1,24 +1,24 @@
-// ================================================
-//   AMBASSADOR CONTROLLER
-// ================================================
+'use strict';
 
 const Ambassador = require('../models/Ambassador');
 const User       = require('../models/User');
 
-// POST /api/ambassadors/register
+// ================================================
+//   REGISTER AMBASSADOR
+//   POST /api/ambassadors/register
+// ================================================
+
 const registerAmbassador = async function (req, res) {
   try {
-    var userId = req.user._id;
+    console.log('[Ambassador] register — user:', req.user.email);
+    console.log('[Ambassador] body:', JSON.stringify(req.body));
 
-    console.log('[Ambassador] Register called by:', req.user.email);
-    console.log('[Ambassador] Body:', JSON.stringify(req.body));
-
-    var existing = await Ambassador.findOne({ user: userId });
+    var existing = await Ambassador.findOne({ user: req.user._id });
     if (existing) {
-      console.log('[Ambassador] Already registered:', existing.username);
-      return res.status(200).json({
+      console.log('[Ambassador] Already exists:', existing.username);
+      return res.json({
         success:    true,
-        message:    'Already registered as ambassador.',
+        message:    'Already registered.',
         ambassador: existing
       });
     }
@@ -30,71 +30,67 @@ const registerAmbassador = async function (req, res) {
     var social     = (req.body.social     || '').trim();
     var reason     = (req.body.reason     || '').trim();
 
-    console.log('[Ambassador] fullName:', fullName);
-    console.log('[Ambassador] username:', username);
-    console.log('[Ambassador] university:', university);
+    var missing = [];
+    if (!fullName)   missing.push('fullName');
+    if (!university) missing.push('university');
+    if (!username)   missing.push('username');
+    if (!whatsApp)   missing.push('whatsApp');
 
-    if (!fullName || !university || !username || !whatsApp) {
-      var missing = [];
-      if (!fullName)   missing.push('fullName');
-      if (!university) missing.push('university');
-      if (!username)   missing.push('username');
-      if (!whatsApp)   missing.push('whatsApp');
-
+    if (missing.length > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Missing required fields: ' + missing.join(', ')
+        message: 'Missing: ' + missing.join(', ')
       });
     }
 
-    // Check username taken
     var taken = await Ambassador.findOne({ username: username });
     if (taken) {
       return res.status(400).json({
         success: false,
-        message: 'Username "' + username + '" is already taken.'
+        message: 'Username "' + username + '" already taken.'
       });
     }
 
     var refCode = 'AMB-' + username.toUpperCase();
 
-    console.log('[Ambassador] Creating ambassador document...');
+    console.log('[Ambassador] Creating document...');
 
     var ambassador = await Ambassador.create({
-      user:       userId,
-      fullName:   fullName,
-      email:      req.user.email,
-      username:   username,
-      university: university,
-      whatsApp:   whatsApp,
-      social:     social,
-      reason:     reason,
-      refCode:    refCode,
-      earnings:   0,
-      referrals:  [],
+      user:        req.user._id,
+      fullName:    fullName,
+      email:       req.user.email,
+      username:    username,
+      university:  university,
+      whatsApp:    whatsApp,
+      social:      social || '',
+      reason:      reason || '',
+      refCode:     refCode,
+      earnings:    0,
+      referrals:   [],
       withdrawals: [],
-      tasksDone:  []
+      tasksDone:   [],
+      status:      'active'
     });
 
     console.log('[Ambassador] ✅ Created! ID:', ambassador._id, '| refCode:', refCode);
 
-    await User.findByIdAndUpdate(userId, { role: 'ambassador' });
-    console.log('[Ambassador] User role updated to ambassador');
+    await User.findByIdAndUpdate(req.user._id, { role: 'ambassador' });
+    console.log('[Ambassador] User role → ambassador');
 
     return res.status(201).json({
       success:    true,
-      message:    'Ambassador account created! Your referral code: ' + refCode,
+      message:    'Ambassador account created! Referral code: ' + refCode,
       ambassador: ambassador
     });
 
   } catch (err) {
-    console.error('[Ambassador] Register error:', err.message);
-    console.error('[Ambassador] Stack:', err.stack);
+    console.error('[Ambassador] register error:', err.message);
+    console.error('[Ambassador] stack:', err.stack);
 
     if (err.code === 11000) {
       return res.status(400).json({
         success: false,
-        message: 'Username already taken. Please choose another.'
+        message: 'Username already taken.'
       });
     }
 
@@ -105,54 +101,64 @@ const registerAmbassador = async function (req, res) {
   }
 };
 
-// GET /api/ambassadors/my-profile
+// ================================================
+//   GET MY PROFILE
+//   GET /api/ambassadors/my-profile
+// ================================================
+
 const getMyProfile = async function (req, res) {
   try {
+    console.log('[Ambassador] getMyProfile — user:', req.user.email);
+
     var ambassador = await Ambassador.findOne({ user: req.user._id });
+
     if (!ambassador) {
-      return res.status(200).json({
+      return res.json({
         success:      true,
         isAmbassador: false,
         ambassador:   null
       });
     }
-    return res.status(200).json({
+
+    return res.json({
       success:      true,
       isAmbassador: true,
       ambassador:   ambassador
     });
   } catch (err) {
-    console.error('Get ambassador profile error:', err.message);
-    return res.status(500).json({
-      success: false, message: err.message
-    });
+    console.error('[Ambassador] getMyProfile:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// GET /api/ambassadors (admin)
+// ================================================
+//   GET ALL AMBASSADORS — Admin
+//   GET /api/ambassadors
+// ================================================
+
 const getAllAmbassadors = async function (req, res) {
   try {
     var ambassadors = await Ambassador.find().sort({ createdAt: -1 });
-    return res.status(200).json({
+    return res.json({
       success:     true,
       count:       ambassadors.length,
       ambassadors: ambassadors
     });
   } catch (err) {
-    return res.status(500).json({
-      success: false, message: err.message
-    });
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// POST /api/ambassadors/withdraw
+// ================================================
+//   REQUEST WITHDRAWAL
+//   POST /api/ambassadors/withdraw
+// ================================================
+
 const requestWithdrawal = async function (req, res) {
   try {
     var ambassador = await Ambassador.findOne({ user: req.user._id });
     if (!ambassador) {
-      return res.status(404).json({
-        success: false, message: 'Ambassador not found.'
-      });
+      return res.status(404).json({ success: false, message: 'Ambassador not found.' });
     }
 
     var accountName = (req.body.accountName || '').trim();
@@ -162,20 +168,17 @@ const requestWithdrawal = async function (req, res) {
 
     if (!accountName || !bankName || !accountNum || !amount) {
       return res.status(400).json({
-        success: false,
-        message: 'All bank details are required.'
+        success: false, message: 'All bank details and amount are required.'
       });
     }
     if (amount < 500) {
       return res.status(400).json({
-        success: false,
-        message: 'Minimum withdrawal is ₦500.'
+        success: false, message: 'Minimum withdrawal is ₦500.'
       });
     }
     if (amount > ambassador.earnings) {
       return res.status(400).json({
-        success: false,
-        message: 'Amount exceeds available balance.'
+        success: false, message: 'Amount exceeds available balance.'
       });
     }
 
@@ -184,58 +187,48 @@ const requestWithdrawal = async function (req, res) {
     });
     await ambassador.save();
 
-    return res.status(201).json({
-      success: true,
-      message: 'Withdrawal request submitted!'
-    });
+    return res.status(201).json({ success: true, message: 'Withdrawal request submitted!' });
   } catch (err) {
-    console.error('Withdrawal error:', err.message);
-    return res.status(500).json({
-      success: false, message: err.message
-    });
+    console.error('[Ambassador] requestWithdrawal:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// POST /api/ambassadors/claim-task
+// ================================================
+//   CLAIM TASK REWARD
+//   POST /api/ambassadors/claim-task
+// ================================================
+
 const claimTaskReward = async function (req, res) {
   try {
     var ambassador = await Ambassador.findOne({ user: req.user._id });
     if (!ambassador) {
-      return res.status(404).json({
-        success: false, message: 'Ambassador not found.'
-      });
+      return res.status(404).json({ success: false, message: 'Ambassador not found.' });
     }
 
     var taskId = req.body.taskId;
     var reward = parseInt(req.body.reward) || 0;
 
     if (!taskId) {
-      return res.status(400).json({
-        success: false, message: 'Task ID required.'
-      });
+      return res.status(400).json({ success: false, message: 'Task ID required.' });
     }
-
     if (ambassador.tasksDone.includes(taskId)) {
-      return res.status(400).json({
-        success: false, message: 'Already claimed.'
-      });
+      return res.status(400).json({ success: false, message: 'Already claimed.' });
     }
 
     ambassador.tasksDone.push(taskId);
     ambassador.earnings += reward;
     await ambassador.save();
 
-    return res.status(200).json({
+    return res.json({
       success:   true,
       message:   '₦' + reward + ' reward claimed!',
       earnings:  ambassador.earnings,
       tasksDone: ambassador.tasksDone
     });
   } catch (err) {
-    console.error('Claim task error:', err.message);
-    return res.status(500).json({
-      success: false, message: err.message
-    });
+    console.error('[Ambassador] claimTaskReward:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
