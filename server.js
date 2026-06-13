@@ -121,9 +121,10 @@ function loadRoute(filePath, mountPath) {
   try {
     var router = require(filePath);
     app.use(mountPath, router);
-    console.log('✅ Route mounted: ' + mountPath);
+    console.log('✅ Route loaded: ' + mountPath);
   } catch (err) {
-    console.error('❌ Route failed [' + mountPath + ']: ' + err.message);
+    console.error('❌ Route FAILED: ' + mountPath + ' → ' + err.message);
+    console.error('   Stack: ' + err.stack);
   }
 }
 
