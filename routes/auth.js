@@ -1,118 +1,70 @@
 'use strict';
 
-var express  = require('express');
-var router   = express.Router();
-
-// ---- Load controller safely ----
-var ctrl;
-try {
-  ctrl = require('../controllers/authController');
-  console.log('[Auth Routes] Controller loaded OK');
-  console.log('[Auth Routes] Functions:', Object.keys(ctrl));
-} catch (err) {
-  console.error('[Auth Routes] FAILED to load controller:', err.message);
-  // Return error for every route if controller fails
-  module.exports = router;
-  return;
-}
-
-// ---- Load middleware safely ----
-var protect;
-try {
-  protect = require('../middleware/auth').protect;
-  console.log('[Auth Routes] Middleware loaded OK');
-} catch (err) {
-  console.error('[Auth Routes] FAILED to load middleware:', err.message);
-}
+var express = require('express');
+var router  = express.Router();
 
 // ================================================
-//   PUBLIC ROUTES — no token needed
+//   LOAD CONTROLLER WITH DIAGNOSTICS
 // ================================================
 
-// POST /api/auth/register
-router.post('/register', function (req, res) {
-  console.log('[Auth] POST /register hit');
-  if (typeof ctrl.register !== 'function') {
-    return res.status(500).json({
-      success: false,
-      message: 'register controller not found'
-    });
-  }
-  return ctrl.register(req, res);
-});
+var ctrl = require('../controllers/authController');
 
-// POST /api/auth/login
-router.post('/login', function (req, res) {
-  console.log('[Auth] POST /login hit');
-  if (typeof ctrl.login !== 'function') {
-    return res.status(500).json({
-      success: false,
-      message: 'login controller not found'
-    });
-  }
-  return ctrl.login(req, res);
-});
-
-// POST /api/auth/forgot-password
-router.post('/forgot-password', function (req, res) {
-  console.log('[Auth] POST /forgot-password hit');
-  if (typeof ctrl.forgotPassword !== 'function') {
-    return res.status(500).json({
-      success: false,
-      message: 'forgotPassword controller not found'
-    });
-  }
-  return ctrl.forgotPassword(req, res);
-});
-
-// POST /api/auth/reset-password
-router.post('/reset-password', function (req, res) {
-  console.log('[Auth] POST /reset-password hit');
-  if (typeof ctrl.resetPassword !== 'function') {
-    return res.status(500).json({
-      success: false,
-      message: 'resetPassword controller not found'
-    });
-  }
-  return ctrl.resetPassword(req, res);
-});
+console.log('=== AUTH ROUTES LOADING ===');
+console.log('ctrl.register:',       typeof ctrl.register);
+console.log('ctrl.login:',          typeof ctrl.login);
+console.log('ctrl.getMe:',          typeof ctrl.getMe);
+console.log('ctrl.updateProfile:',  typeof ctrl.updateProfile);
+console.log('ctrl.changePassword:', typeof ctrl.changePassword);
+console.log('ctrl.forgotPassword:', typeof ctrl.forgotPassword);
+console.log('ctrl.resetPassword:',  typeof ctrl.resetPassword);
 
 // ================================================
-//   PROTECTED ROUTES — token required
+//   LOAD MIDDLEWARE
 // ================================================
 
-// GET /api/auth/me
-router.get('/me', function (req, res) {
-  console.log('[Auth] GET /me hit');
-  if (typeof protect !== 'function') {
-    return res.status(500).json({ success: false, message: 'Auth middleware not loaded' });
+var protect = require('../middleware/auth').protect;
+console.log('protect middleware:', typeof protect);
+
+// ================================================
+//   SAFETY CHECK
+//   Crash loudly if any function is undefined
+//   so Render shows the real error
+// ================================================
+
+var requiredFunctions = [
+  'register', 'login', 'getMe',
+  'updateProfile', 'changePassword',
+  'forgotPassword', 'resetPassword'
+];
+
+requiredFunctions.forEach(function (fn) {
+  if (typeof ctrl[fn] !== 'function') {
+    throw new Error(
+      'authController.' + fn + ' is ' + typeof ctrl[fn] +
+      ' — export is missing or undefined'
+    );
   }
-  if (typeof ctrl.getMe !== 'function') {
-    return res.status(500).json({ success: false, message: 'getMe controller not found' });
-  }
-  return protect(req, res, function () {
-    return ctrl.getMe(req, res);
-  });
 });
 
-// PUT /api/auth/update-profile
-router.put('/update-profile', function (req, res) {
-  if (typeof protect !== 'function' || typeof ctrl.updateProfile !== 'function') {
-    return res.status(500).json({ success: false, message: 'Route not configured' });
-  }
-  return protect(req, res, function () {
-    return ctrl.updateProfile(req, res);
-  });
-});
+console.log('=== ALL AUTH FUNCTIONS VERIFIED ===');
 
-// PUT /api/auth/change-password
-router.put('/change-password', function (req, res) {
-  if (typeof protect !== 'function' || typeof ctrl.changePassword !== 'function') {
-    return res.status(500).json({ success: false, message: 'Route not configured' });
-  }
-  return protect(req, res, function () {
-    return ctrl.changePassword(req, res);
-  });
-});
+// ================================================
+//   PUBLIC ROUTES
+// ================================================
+
+router.post('/register',       ctrl.register);
+router.post('/login',          ctrl.login);
+router.post('/forgot-password', ctrl.forgotPassword);
+router.post('/reset-password',  ctrl.resetPassword);
+
+// ================================================
+//   PROTECTED ROUTES
+// ================================================
+
+router.get ('/me',              protect, ctrl.getMe);
+router.put ('/update-profile',  protect, ctrl.updateProfile);
+router.put ('/change-password', protect, ctrl.changePassword);
+
+console.log('=== AUTH ROUTES REGISTERED ===');
 
 module.exports = router;
