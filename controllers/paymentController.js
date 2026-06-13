@@ -302,6 +302,7 @@ if (type === 'vendor_registration') {
 
     if (adForm && adForm.title) {
       var priceMap   = { 7: 2000, 14: 3500, 30: 6000 };
+      
       var duration   = parseInt(adForm.duration) || 7;
       var expiry     = new Date();
       expiry.setDate(expiry.getDate() + duration);

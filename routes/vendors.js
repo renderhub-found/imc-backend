@@ -1,8 +1,9 @@
-'use strict';
+
+  'use strict';
 
 const express     = require('express');
 const router      = express.Router();
-const ctrl        = require('../controllers/vendorcontroller');
+const ctrl        = require('../controllers/vendorController');
 const { protect } = require('../middleware/auth');
 
 // =============================================
