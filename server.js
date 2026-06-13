@@ -1,63 +1,57 @@
-// ================================================
-//   INSIDE MY CAMPUS — server.js
-//   Stable version — database connects FIRST
-//   then server starts
-// ================================================
-
 'use strict';
 
-const express  = require('express');
-const mongoose = require('mongoose');
-const cors     = require('cors');
-const dotenv   = require('dotenv');
+var express  = require('express');
+var mongoose = require('mongoose');
+var cors     = require('cors');
+var dotenv   = require('dotenv');
 
-// Load environment variables
 dotenv.config();
 
-const app       = express();
-const PORT      = process.env.PORT      || 5000;
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/imc_db';
-const JWT_SECRET = process.env.JWT_SECRET;
+var app  = express();
+var PORT = process.env.PORT || 5000;
 
-// ---- Safety check ----
-if (!JWT_SECRET) {
-  console.error('❌ FATAL: JWT_SECRET is not defined in .env');
-  process.exit(1);
-}
+// ================================================
+//   STARTUP CHECK
+// ================================================
 
 console.log('');
 console.log('========================================');
 console.log('   INSIDE MY CAMPUS — BACKEND SERVER   ');
 console.log('========================================');
-console.log('📦 MongoDB URI: ' + MONGO_URI);
-console.log('🔑 JWT Secret:  ' + (JWT_SECRET ? 'Loaded ✅' : 'Missing ❌'));
+console.log('📦 MongoDB URI: ' +
+  (process.env.MONGO_URI || 'NOT SET').replace(/:([^@]+)@/, ':****@'));
+console.log('🔑 JWT Secret:  ' + (process.env.JWT_SECRET ? 'Loaded ✅' : 'MISSING ❌'));
 console.log('');
 
+if (!process.env.JWT_SECRET) {
+  console.error('❌ FATAL: JWT_SECRET not set. Exiting.');
+  process.exit(1);
+}
+
 // ================================================
-//   MIDDLEWARE — ORDER MATTERS
+//   MIDDLEWARE
 // ================================================
 
-// 1. Webhook raw body FIRST
+// Webhook needs raw body before json parser
 app.use(
   '/api/payments/webhook',
   express.raw({ type: 'application/json' })
 );
 
-// 2. Body parsers
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// 3. CORS — manual implementation fixes OPTIONS preflight
+// CORS
+var allowedOrigins = [
+  'http://127.0.0.1:5500',
+  'http://localhost:5500',
+  'http://localhost:3000',
+  'https://resilient-ganache-be5b9c.netlify.app',
+  process.env.FRONTEND_URL
+].filter(Boolean);
+
 app.use(function (req, res, next) {
   var origin = req.headers.origin;
-
-  var allowedOrigins = [
-    'http://127.0.0.1:5500',
-    'http://localhost:5500',
-    'http://localhost:3000',
-    'https://resilient-ganache-be5b9c.netlify.app',
-    process.env.FRONTEND_URL
-  ].filter(Boolean);
 
   if (origin && allowedOrigins.indexOf(origin) !== -1) {
     res.setHeader('Access-Control-Allow-Origin', origin);
@@ -66,16 +60,11 @@ app.use(function (req, res, next) {
     res.setHeader('Access-Control-Allow-Origin', '*');
   }
 
-  res.setHeader(
-    'Access-Control-Allow-Methods',
-    'GET, POST, PUT, DELETE, OPTIONS'
-  );
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'Content-Type, Authorization, X-Requested-With'
-  );
+  res.setHeader('Access-Control-Allow-Methods',
+    'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers',
+    'Content-Type, Authorization, X-Requested-With');
 
-  // OPTIONS preflight — return immediately, no auth needed
   if (req.method === 'OPTIONS') {
     console.log('OPTIONS preflight for: ' + req.originalUrl);
     return res.status(200).end();
@@ -84,7 +73,7 @@ app.use(function (req, res, next) {
   next();
 });
 
-// 4. Request logger
+// Request logger
 app.use(function (req, res, next) {
   console.log(req.method + ' ' + req.originalUrl +
     ' origin:' + (req.headers.origin || 'none'));
@@ -92,22 +81,21 @@ app.use(function (req, res, next) {
 });
 
 // ================================================
-//   HEALTH CHECK — always works, no DB needed
+//   HEALTH CHECK
 // ================================================
 
 app.get('/api/health', function (req, res) {
-  var dbStates = {
-    0: 'Disconnected ❌',
-    1: 'Connected ✅',
-    2: 'Connecting...',
-    3: 'Disconnecting...'
+  var states = {
+    0: 'Disconnected',
+    1: 'Connected',
+    2: 'Connecting',
+    3: 'Disconnecting'
   };
   res.json({
     success:     true,
     message:     'IMC API is running!',
-    database:    dbStates[mongoose.connection.readyState] || 'Unknown',
+    database:    states[mongoose.connection.readyState] || 'Unknown',
     dbName:      mongoose.connection.name || 'none',
-    port:        PORT,
     environment: process.env.NODE_ENV || 'development',
     timestamp:   new Date().toISOString()
   });
@@ -132,40 +120,51 @@ function loadRoute(filePath, mountPath) {
 //   LOAD ALL ROUTES
 // ================================================
 
+console.log('--- Loading routes ---');
+
 loadRoute('./routes/auth',        '/api/auth');
-// Vendor routes — inline to prevent route caching issues
-(function () {
-  var express      = require('express');
-  var vRouter      = express.Router();
-  var vCtrl        = require('./controllers/vendorcontroller');
-  var authMw       = require('./middleware/auth');
-
-  vRouter.use(function (req, res, next) {
-    console.log('[VENDORS]', req.method, req.path);
-    next();
-  });
-
-  vRouter.get('/products/all',           vCtrl.getAllProducts);
-  vRouter.get('/my-profile',             authMw.protect, vCtrl.getMyVendorProfile);
-  vRouter.post('/register',              authMw.protect, vCtrl.registerVendor);
-  vRouter.post('/products',              authMw.protect, vCtrl.addProduct);
-  vRouter.delete('/products/:productId', authMw.protect, vCtrl.deleteProduct);
-  vRouter.put('/update',                 authMw.protect, vCtrl.updateVendorProfile);
-  vRouter.get('/',                       vCtrl.getAllVendors);
-  vRouter.get('/:id',                    vCtrl.getVendorById);
-
-  app.use('/api/vendors', vRouter);
-  console.log('✅ Vendor routes inline loaded');
-})();
 loadRoute('./routes/ambassadors', '/api/ambassadors');
 loadRoute('./routes/news',        '/api/news');
 loadRoute('./routes/courses',     '/api/courses');
 loadRoute('./routes/admin',       '/api/admin');
 loadRoute('./routes/payments',    '/api/payments');
-loadRoute('./routes/ads',     '/api/ads');
-loadRoute('./routes/contact', '/api/contact');
+loadRoute('./routes/ads',         '/api/ads');
+loadRoute('./routes/contact',     '/api/contact');
+
+// Vendor routes inline
+(function () {
+  try {
+    var vExpress  = require('express');
+    var vRouter   = vExpress.Router();
+    var vCtrl     = require('./controllers/vendorController');
+    var authMw    = require('./middleware/auth');
+
+    vRouter.use(function (req, res, next) {
+      console.log('[VENDORS]', req.method, req.path);
+      next();
+    });
+
+    vRouter.get('/products/all', vCtrl.getAllProducts);
+    vRouter.get('/my-profile',   authMw.protect, vCtrl.getMyVendorProfile);
+    vRouter.post('/register',    authMw.protect, vCtrl.registerVendor);
+    vRouter.post('/products',    authMw.protect, vCtrl.addProduct);
+    vRouter.delete('/products/:productId', authMw.protect, vCtrl.deleteProduct);
+    vRouter.get('/',             vCtrl.getAllVendors);
+    vRouter.get('/:id',          vCtrl.getVendorById);
+
+    app.use('/api/vendors', vRouter);
+    console.log('✅ Vendor routes inline loaded');
+  } catch (err) {
+    console.error('❌ Vendor routes FAILED:', err.message);
+    console.error('   Stack:', err.stack);
+  }
+})();
+
+console.log('--- Routes done ---');
+console.log('');
+
 // ================================================
-//   404 — catches unknown routes
+//   404 HANDLER
 // ================================================
 
 app.use(function (req, res) {
@@ -177,11 +176,11 @@ app.use(function (req, res) {
 });
 
 // ================================================
-//   GLOBAL ERROR HANDLER
+//   ERROR HANDLER
 // ================================================
 
 app.use(function (err, req, res, next) {
-  console.error('💥 Unhandled error:', err.message);
+  console.error('Server error:', err.message);
   res.status(err.status || 500).json({
     success: false,
     message: err.message || 'Internal server error'
@@ -189,79 +188,48 @@ app.use(function (err, req, res, next) {
 });
 
 // ================================================
-//   MONGOOSE CONNECTION OPTIONS
+//   MONGODB + START SERVER
 // ================================================
 
-var mongooseOptions = {
-  serverSelectionTimeoutMS: 10000,
+var MONGO_URI = process.env.MONGO_URI;
+
+if (!MONGO_URI) {
+  console.error('❌ FATAL: MONGO_URI not set. Exiting.');
+  process.exit(1);
+}
+
+var isAtlas = MONGO_URI.includes('mongodb+srv') ||
+              MONGO_URI.includes('mongodb.net');
+
+console.log('📡 Connecting to MongoDB (' +
+  (isAtlas ? 'Atlas' : 'Local') + ')...');
+
+mongoose.connect(MONGO_URI, {
+  serverSelectionTimeoutMS: isAtlas ? 30000 : 10000,
+  connectTimeoutMS:         isAtlas ? 30000 : 10000,
   socketTimeoutMS:          45000,
-  connectTimeoutMS:         10000,
-  family:                   4,
   maxPoolSize:              10
-};
+})
+.then(function () {
+  console.log('');
+  console.log('✅ MongoDB connected successfully!');
+  console.log('📂 Database: ' + mongoose.connection.name);
+  console.log('🔗 Host: '     + mongoose.connection.host);
+  console.log('');
 
-// ================================================
-//   CONNECT TO MONGODB THEN START SERVER
-//   Server only starts AFTER DB connects
-// ================================================
-
-console.log('📡 Connecting to MongoDB...');
-
-mongoose.connect(MONGO_URI, mongooseOptions)
-  .then(function () {
+  app.listen(PORT, function () {
+    console.log('🚀 Server running on port: ' + PORT);
+    console.log('🔍 Health: http://localhost:' + PORT + '/api/health');
     console.log('');
-    console.log('✅ MongoDB connected successfully!');
-    console.log('📂 Database: ' + mongoose.connection.name);
-    console.log('🔗 Host: '     + mongoose.connection.host);
-    console.log('');
-
-    // Start server ONLY after DB is ready
-    app.listen(PORT, function () {
-      console.log('🚀 Server running on port: ' + PORT);
-      console.log('🔍 Health: http://localhost:' + PORT + '/api/health');
-      console.log('');
-      console.log('--- AVAILABLE ROUTES ---');
-      console.log('POST   /api/auth/register');
-      console.log('POST   /api/auth/login');
-      console.log('GET    /api/auth/me');
-      console.log('GET    /api/vendors');
-      console.log('POST   /api/vendors/register');
-      console.log('GET    /api/vendors/my-profile');
-      console.log('GET    /api/vendors/products/all');
-      console.log('POST   /api/vendors/products');
-      console.log('GET    /api/ambassadors/my-profile');
-      console.log('POST   /api/ambassadors/register');
-      console.log('GET    /api/news');
-      console.log('POST   /api/news');
-      console.log('GET    /api/courses');
-      console.log('POST   /api/courses/purchase');
-      console.log('GET    /api/admin/stats');
-      console.log('POST   /api/payments/verify');
-      console.log('------------------------');
-      console.log('');
-    });
-  })
-  .catch(function (err) {
-    console.error('');
-    console.error('❌ MongoDB connection FAILED!');
-    console.error('Error: ' + err.message);
-    console.error('');
-    console.error('==== HOW TO FIX ====');
-    console.error('1. Open Command Prompt as Administrator');
-    console.error('2. Run: net start MongoDB');
-    console.error('3. Run: npm run dev again');
-    console.error('====================');
-    console.error('');
-    process.exit(1);
   });
-
-// Handle unexpected disconnection after startup
-mongoose.connection.on('disconnected', function () {
-  console.error('⚠️  MongoDB disconnected unexpectedly!');
+})
+.catch(function (err) {
+  console.error('❌ MongoDB FAILED:', err.message);
+  process.exit(1);
 });
 
-mongoose.connection.on('reconnected', function () {
-  console.log('✅ MongoDB reconnected!');
+mongoose.connection.on('disconnected', function () {
+  console.error('⚠️ MongoDB disconnected');
 });
 
 module.exports = app;
