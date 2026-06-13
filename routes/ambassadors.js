@@ -1,27 +1,32 @@
 'use strict';
 
-const express    = require('express');
-const router     = express.Router();
-const ctrl       = require('../controllers/ambassadorcontroller');
-const { protect, adminOnly } = require('../middleware/auth');
+var express  = require('express');
+var router   = express.Router();
+var ctrl     = require('../controllers/ambassadorController');
+var authMw   = require('../middleware/auth');
+var protect  = authMw.protect;
+var adminOnly = authMw.adminOnly;
 
-// =============================================
-// STATIC ROUTES FIRST
-// =============================================
+console.log('[Ambassador Routes] Loading...');
+console.log('[Ambassador Routes] registerAmbassador:', typeof ctrl.registerAmbassador);
+console.log('[Ambassador Routes] getMyProfile:', typeof ctrl.getMyProfile);
 
-// GET  /api/ambassadors/my-profile
-router.get('/my-profile', protect, ctrl.getMyProfile);
+// Verify all functions exist
+var required = ['registerAmbassador','getMyProfile','getAllAmbassadors',
+                'requestWithdrawal','claimTaskReward'];
+required.forEach(function (fn) {
+  if (typeof ctrl[fn] !== 'function') {
+    throw new Error('ambassadorController.' + fn + ' is undefined');
+  }
+});
 
-// POST /api/ambassadors/register
-router.post('/register', protect, ctrl.registerAmbassador);
+// Static routes FIRST — before any /:id
+router.get('/my-profile',  protect,              ctrl.getMyProfile);
+router.post('/register',   protect,              ctrl.registerAmbassador);
+router.post('/withdraw',   protect,              ctrl.requestWithdrawal);
+router.post('/claim-task', protect,              ctrl.claimTaskReward);
+router.get('/',            protect, adminOnly,   ctrl.getAllAmbassadors);
 
-// POST /api/ambassadors/withdraw
-router.post('/withdraw', protect, ctrl.requestWithdrawal);
-
-// POST /api/ambassadors/claim-task
-router.post('/claim-task', protect, ctrl.claimTaskReward);
-
-// GET  /api/ambassadors  (admin only)
-router.get('/', protect, adminOnly, ctrl.getAllAmbassadors);
+console.log('[Ambassador Routes] ✅ All routes registered');
 
 module.exports = router;
