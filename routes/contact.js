@@ -2,7 +2,7 @@
 
 const express    = require('express');
 const router     = express.Router();
-const ctrl       = require('../controllers/contactcontroller');
+const ctrl       = require('../controllers/contactController');
 const { protect, adminOnly } = require('../middleware/auth');
 
 // POST — submit contact message (public)
