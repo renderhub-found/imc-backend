@@ -606,3 +606,15 @@ GET http://localhost:5000/api/admin/payments
 Authorization: Bearer ADMIN_TOKEN_HERE
 
 ###
+POST https://imc-backend-0y2u.onrender.com/api/ambassadors/register
+Authorization: Bearer YOUR_TOKEN
+Content-Type: application/json
+
+{
+  "fullName": "Test Person",
+  "university": "UNILAG",
+  "username": "testperson99",
+  "whatsApp": "08011111111",
+  "social": "@testperson",
+  "reason": "Testing"
+}

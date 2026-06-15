@@ -286,51 +286,55 @@ if (type === 'vendor_registration') {
 
   // ---- AD POSTING ----
   if (type === 'ad_posting') {
-    var ad = await Ad.findOneAndUpdate(
-      { ownerEmail: user.email, paymentStatus: 'pending' },
-      { paymentStatus: 'paid', paymentRef: reference },
-      { new: true, sort: { createdAt: -1 } }
-    );
+  console.log('[Payment] Processing ad_posting for:', user.email);
 
-    if (ad) {
-      console.log('[Payment] ✅ Ad payment updated:', ad.title);
-      return { updated: 'ad', title: ad.title, redirectUrl: 'post-ad.html' };
-    }
+  // First try to update existing pending ad
+  var ad = await Ad.findOneAndUpdate(
+    { ownerEmail: user.email, paymentStatus: 'pending' },
+    { paymentStatus: 'paid', paymentRef: reference },
+    { new: true, sort: { createdAt: -1 } }
+  );
 
-    console.log('[Payment] No pending ad — creating from metadata');
-    var adForm = metadata.adForm || null;
-
-    if (adForm && adForm.title) {
-      var priceMap   = { 7: 2000, 14: 3500, 30: 6000 };
-      
-      var duration   = parseInt(adForm.duration) || 7;
-      var expiry     = new Date();
-      expiry.setDate(expiry.getDate() + duration);
-
-      var newAd = await Ad.create({
-        owner:         user._id,
-        ownerName:     adForm.ownerName || user.firstName,
-        ownerEmail:    user.email,
-        title:         adForm.title,
-        category:      adForm.category    || '',
-        description:   adForm.description || '',
-        location:      adForm.location    || '',
-        contact:       adForm.contact     || '',
-        image:         adForm.image       || '',
-        duration:      duration,
-        price:         priceMap[duration] || 2000,
-        paymentRef:    reference,
-        paymentStatus: 'paid',
-        status:        'pending',
-        expiryDate:    expiry
-      });
-
-      console.log('[Payment] ✅ Ad CREATED via processPayment:', newAd.title);
-      return { updated: 'ad', title: newAd.title, redirectUrl: 'post-ad.html' };
-    }
-
-    return { updated: 'ad_not_found' };
+  if (ad) {
+    console.log('[Payment] ✅ Existing ad payment updated:', ad.title);
+    return { updated: 'ad', title: ad.title, redirectUrl: 'post-ad.html' };
   }
+
+  // No existing ad — create from metadata
+  var adForm = metadata.adForm || null;
+  console.log('[Payment] adForm in metadata:', adForm ? 'PRESENT' : 'MISSING');
+
+  if (adForm && adForm.title) {
+    var priceMap = { 7: 2000, 14: 3500, 30: 6000 };
+    var duration = parseInt(adForm.duration) || 7;
+    var expiry   = new Date();
+    expiry.setDate(expiry.getDate() + duration);
+
+    var newAd = await Ad.create({
+      owner:         user._id,
+      ownerName:     adForm.ownerName || user.firstName || '',
+      ownerEmail:    user.email,
+      title:         adForm.title,
+      category:      adForm.category    || '',
+      description:   adForm.description || '',
+      location:      adForm.location    || '',
+      contact:       adForm.contact     || '',
+      image:         adForm.image       || '',
+      duration:      duration,
+      price:         priceMap[duration] || 2000,
+      paymentRef:    reference,
+      paymentStatus: 'paid',
+      status:        'pending',
+      expiryDate:    expiry
+    });
+
+    console.log('[Payment] ✅ Ad CREATED from metadata:', newAd.title, '| ID:', newAd._id);
+    return { updated: 'ad', title: newAd.title, redirectUrl: 'post-ad.html' };
+  }
+
+  console.log('[Payment] Ad form missing from metadata — ad not created');
+  return { updated: 'ad_payment_only', note: 'Form data missing' };
+}
 
   // ---- COURSE PURCHASE ----
   if (type === 'course_purchase') {
