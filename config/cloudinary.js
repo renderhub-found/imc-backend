@@ -1,33 +1,33 @@
 'use strict';
 
+// Load cloudinary v2
 var cloudinary = require('cloudinary').v2;
 
 console.log('[Cloudinary] Initializing...');
 
-// Verify all required env vars exist
-var required = [
-  'CLOUDINARY_dozmwweuo',
-  'CLOUDINARY_735185651841353',
-  'CLOUDINARY_5T3PI7-agMD-P-vLTrFZmx1d8E4'
-];
+var CLOUD_NAME  = process.env.CLOUDINARY_dozmwweuo;
+var API_KEY     = process.env.CLOUDINARY_735185651841353;
+var API_SECRET  = process.env.CLOUDINARY_5T3PI7-agMD-P-vLTrFZmx1d8E4;
 
-var missing = required.filter(function (key) {
-  return !process.env[key];
-});
+var configured = false;
 
-if (missing.length > 0) {
-  console.error('[Cloudinary] ❌ Missing environment variables:', missing.join(', '));
-  console.error('[Cloudinary] Add them to your .env file and Render environment.');
-  // Do not crash server — uploads will fail gracefully
+if (!CLOUD_NAME || !API_KEY || !API_SECRET) {
+  console.warn('[Cloudinary] ⚠️  Missing environment variables:');
+  if (!CLOUD_NAME) console.warn('  - CLOUDINARY_CLOUD_NAME');
+  if (!API_KEY)    console.warn('  - CLOUDINARY_API_KEY');
+  if (!API_SECRET) console.warn('  - CLOUDINARY_API_SECRET');
+  console.warn('[Cloudinary] Image uploads will fail until these are set.');
 } else {
+  // Configure ONCE
   cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key:    process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
+    cloud_name: CLOUD_NAME,
+    api_key:    API_KEY,
+    api_secret: API_SECRET,
     secure:     true
   });
 
-  console.log('[Cloudinary] ✅ Configured. Cloud:', process.env.CLOUDINARY_CLOUD_NAME);
+  configured = true;
+  console.log('[Cloudinary] ✅ Configured. Cloud:', CLOUD_NAME);
 }
 
 // ================================================
@@ -35,35 +35,44 @@ if (missing.length > 0) {
 // ================================================
 
 async function testConnection() {
+  if (!configured) {
+    console.warn('[Cloudinary] Cannot test: not configured');
+    return false;
+  }
+
   try {
     var result = await cloudinary.api.ping();
-    console.log('[Cloudinary] ✅ Connection verified. Status:', result.status);
+    console.log('[Cloudinary] ✅ Ping OK. Status:', result.status);
     return true;
   } catch (err) {
-    console.error('[Cloudinary] ❌ Connection failed:', err.message);
+    console.error('[Cloudinary] ❌ Ping failed:', err.message);
     return false;
   }
 }
 
 // ================================================
-//   UPLOAD BUFFER DIRECTLY
-//   Used when multer is not in the pipeline
+//   UPLOAD FROM BUFFER
 // ================================================
 
 async function uploadBuffer(buffer, options) {
+  if (!configured) {
+    throw new Error('Cloudinary not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET.');
+  }
+
   return new Promise(function (resolve, reject) {
-    var uploadOptions = Object.assign({
-      folder:   'imc',
-      resource_type: 'image'
+    var opts = Object.assign({
+      resource_type: 'image',
+      folder:        'imc'
     }, options || {});
 
-    var stream = cloudinary.uploader.upload_stream(
-      uploadOptions,
-      function (err, result) {
-        if (err) return reject(err);
-        resolve(result);
+    var stream = cloudinary.uploader.upload_stream(opts, function (err, result) {
+      if (err) {
+        console.error('[Cloudinary] Upload stream error:', err.message);
+        return reject(err);
       }
-    );
+      console.log('[Cloudinary] ✅ Uploaded:', result.secure_url);
+      resolve(result);
+    });
 
     stream.end(buffer);
   });
@@ -74,18 +83,20 @@ async function uploadBuffer(buffer, options) {
 // ================================================
 
 async function deleteImage(publicId) {
+  if (!configured) return;
+
   try {
     var result = await cloudinary.uploader.destroy(publicId);
-    console.log('[Cloudinary] Deleted:', publicId, '| Result:', result.result);
+    console.log('[Cloudinary] Deleted:', publicId);
     return result;
   } catch (err) {
     console.error('[Cloudinary] Delete error:', err.message);
-    throw err;
   }
 }
 
 module.exports = {
   cloudinary,
+  configured,
   testConnection,
   uploadBuffer,
   deleteImage

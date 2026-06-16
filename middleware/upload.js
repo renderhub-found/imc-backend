@@ -1,113 +1,79 @@
 'use strict';
 
-var multer   = require('multer');
-var path     = require('path');
-var crypto   = require('crypto');
+var multer = require('multer');
+var path   = require('path');
+var crypto = require('crypto');
 
-var cloudinaryConfig = require('../config/cloudinary');
-var cloudinary       = cloudinaryConfig.cloudinary;
-
-// ================================================
-//   ACCEPTED MIME TYPES
-// ================================================
-
-var ACCEPTED_TYPES = [
+var ACCEPTED_MIMES = [
   'image/jpeg',
   'image/jpg',
   'image/png',
   'image/webp'
 ];
 
-var ACCEPTED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
+var ACCEPTED_EXTS = ['.jpg', '.jpeg', '.png', '.webp'];
 
-// ================================================
-//   FILE FILTER — security check
-// ================================================
-
+// ---- File filter ----
 function fileFilter(req, file, cb) {
-  console.log('[Upload] File received:', file.originalname, '| MIME:', file.mimetype);
+  console.log('[Upload] File:', file.originalname, '| MIME:', file.mimetype);
 
-  // Check MIME type
-  if (!ACCEPTED_TYPES.includes(file.mimetype)) {
-    console.log('[Upload] Rejected: unsupported MIME type');
+  if (!ACCEPTED_MIMES.includes(file.mimetype)) {
     return cb(new Error(
-      'Only JPG, PNG and WebP images are allowed. Got: ' + file.mimetype
+      'Only JPG, PNG and WebP images allowed. Got: ' + file.mimetype
     ), false);
   }
 
-  // Check file extension
   var ext = path.extname(file.originalname).toLowerCase();
-  if (!ACCEPTED_EXTENSIONS.includes(ext)) {
-    console.log('[Upload] Rejected: unsupported extension:', ext);
-    return cb(new Error(
-      'Invalid file extension: ' + ext
-    ), false);
+  if (!ACCEPTED_EXTS.includes(ext)) {
+    return cb(new Error('Invalid file extension: ' + ext), false);
   }
 
-  // Prevent path traversal
-  var safeName = path.basename(file.originalname);
-  if (safeName !== file.originalname.replace(/.*[/\\]/, '')) {
-    return cb(new Error('Invalid filename'), false);
-  }
-
-  console.log('[Upload] File accepted:', file.originalname);
   cb(null, true);
 }
 
-// ================================================
-//   USE MEMORY STORAGE
-//   We upload to Cloudinary directly from buffer
-//   Never write to disk
-// ================================================
-
-var storage = multer.memoryStorage();
-
-// ================================================
-//   MULTER INSTANCE
-// ================================================
-
+// ---- Memory storage — never write to disk ----
 var upload = multer({
-  storage: storage,
+  storage:    multer.memoryStorage(),
   fileFilter: fileFilter,
   limits: {
     fileSize:  5 * 1024 * 1024,  // 5MB
-    files:     1,                  // 1 file at a time
-    fieldSize: 10 * 1024 * 1024   // 10MB field size
+    files:     1
   }
 });
 
-// ================================================
-//   CLOUDINARY UPLOAD MIDDLEWARE
-//   Runs AFTER multer — uploads buffer to Cloudinary
-// ================================================
-
+// ---- Upload to Cloudinary middleware ----
 function uploadToCloudinary(folder) {
   return async function (req, res, next) {
-    if (!req.file) {
-      // No file uploaded — continue without error
-      return next();
-    }
+    if (!req.file) return next();
 
     try {
-      console.log('[Upload] Uploading to Cloudinary...');
-      console.log('[Upload] Folder:', folder || 'imc/general');
-      console.log('[Upload] Size:', req.file.size, 'bytes');
+      var cloudinaryConfig = require('../config/cloudinary');
 
-      // Generate safe unique public ID
+      if (!cloudinaryConfig.configured) {
+        console.warn('[Upload] Cloudinary not configured — skipping upload');
+        req.cloudinaryUrl      = '';
+        req.cloudinaryPublicId = '';
+        return next();
+      }
+
       var ext      = path.extname(req.file.originalname).toLowerCase().replace('.', '');
       var safeName = crypto.randomBytes(16).toString('hex');
-      var publicId = (folder || 'imc/general') + '/' + safeName;
 
-      var result = await cloudinary.uploader.upload_stream_promise
-        ? uploadViaStream(req.file.buffer, publicId, ext)
-        : uploadDirect(req.file.buffer, publicId, ext);
+      var result = await cloudinaryConfig.uploadBuffer(req.file.buffer, {
+        folder:    folder || 'imc/general',
+        public_id: safeName,
+        format:    ext,
+        transformation: [
+          { width: 1200, height: 900, crop: 'limit' },
+          { quality: 'auto:good' },
+          { fetch_format: 'auto' }
+        ]
+      });
 
-      console.log('[Upload] ✅ Uploaded:', result.secure_url);
-
-      // Attach to request for controllers
       req.cloudinaryUrl      = result.secure_url;
       req.cloudinaryPublicId = result.public_id;
 
+      console.log('[Upload] ✅ Cloudinary URL:', result.secure_url);
       next();
 
     } catch (err) {
@@ -120,67 +86,23 @@ function uploadToCloudinary(folder) {
   };
 }
 
-function uploadViaStream(buffer, publicId, ext) {
-  var cloudinaryConfig = require('../config/cloudinary');
-  return cloudinaryConfig.uploadBuffer(buffer, {
-    public_id:     publicId,
-    format:        ext,
-    folder:        undefined, // already in publicId
-    transformation: [
-      { width: 1200, height: 900, crop: 'limit' },
-      { quality: 'auto:good' },
-      { fetch_format: 'auto' }
-    ]
-  });
-}
-
-function uploadDirect(buffer, publicId, ext) {
-  var cloudinaryConfig = require('../config/cloudinary');
-  return cloudinaryConfig.uploadBuffer(buffer, {
-    public_id:     publicId,
-    format:        ext,
-    transformation: [
-      { width: 1200, height: 900, crop: 'limit' },
-      { quality: 'auto:good' },
-      { fetch_format: 'auto' }
-    ]
-  });
-}
-
-// ================================================
-//   ERROR HANDLER FOR MULTER
-// ================================================
-
+// ---- Multer error handler ----
 function handleUploadErrors(err, req, res, next) {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
       return res.status(400).json({
-        success: false,
-        message: 'File too large. Maximum size is 5MB.'
+        success: false, message: 'File too large. Maximum 5MB.'
       });
     }
-    return res.status(400).json({
-      success: false,
-      message: 'Upload error: ' + err.message
-    });
+    return res.status(400).json({ success: false, message: 'Upload error: ' + err.message });
   }
-
-  if (err && err.message) {
-    return res.status(400).json({
-      success: false,
-      message: err.message
-    });
+  if (err) {
+    return res.status(400).json({ success: false, message: err.message });
   }
-
-  next(err);
+  next();
 }
 
-// ================================================
-//   EXPORTS
-// ================================================
-
 module.exports = {
-  // Single image upload middleware
   single: function (fieldName, folder) {
     return [
       upload.single(fieldName),
@@ -188,11 +110,8 @@ module.exports = {
       uploadToCloudinary(folder)
     ];
   },
-
-  // Just multer without Cloudinary (for base64 handling)
   multerSingle: function (fieldName) {
     return [upload.single(fieldName), handleUploadErrors];
   },
-
   handleUploadErrors: handleUploadErrors
 };

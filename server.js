@@ -8,25 +8,44 @@ var dotenv   = require('dotenv');
 dotenv.config();
 
 // ================================================
-//   INITIALIZE CLOUDINARY
+//   NON-BLOCKING STARTUP CHECKS
+//   Server starts even if these fail
 // ================================================
 
-try {
-  var cloudinaryConfig = require('./config/cloudinary');
-  // Test connection on startup (non-blocking)
-  cloudinaryConfig.testConnection().then(function (ok) {
-    if (ok) {
-      console.log('✅ Cloudinary ready');
+// Test Cloudinary
+setImmediate(function () {
+  try {
+    var cloudCfg = require('./config/cloudinary');
+    if (cloudCfg.configured) {
+      cloudCfg.testConnection().then(function (ok) {
+        console.log(ok ? '✅ Cloudinary connected' : '⚠️  Cloudinary ping failed');
+      }).catch(function (err) {
+        console.warn('[Cloudinary] Startup test error:', err.message);
+      });
     } else {
-      console.warn('⚠️  Cloudinary not connected — image uploads will fail');
+      console.warn('⚠️  Cloudinary not configured — set CLOUDINARY_* env vars');
     }
-  });
-} catch (cloudErr) {
-  console.error('❌ Cloudinary config error:', cloudErr.message);
-}
+  } catch (err) {
+    console.warn('[Cloudinary] Init error:', err.message);
+  }
+});
+
+// Test Email
+setImmediate(function () {
+  try {
+    var emailSvc = require('./utils/emailService');
+    emailSvc.verifyTransporter().then(function (ok) {
+      console.log(ok ? '✅ Email SMTP connected' : '⚠️  Email SMTP failed — check EMAIL_USER/EMAIL_PASS');
+    }).catch(function (err) {
+      console.warn('[Email] Startup test error:', err.message);
+    });
+  } catch (err) {
+    console.warn('[Email] Init error:', err.message);
+  }
+});
 
 // ================================================
-//   VERIFY EMAIL TRANSPORTER
+//   VERIFY TRANSPORTER
 // ================================================
 
 try {
