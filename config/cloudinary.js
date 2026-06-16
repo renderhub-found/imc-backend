@@ -6,9 +6,9 @@ console.log('[Cloudinary] Initializing...');
 
 // Verify all required env vars exist
 var required = [
-  'CLOUDINARY_CLOUD_NAME',
-  'CLOUDINARY_API_KEY',
-  'CLOUDINARY_API_SECRET'
+  'CLOUDINARY_dozmwweuo',
+  'CLOUDINARY_735185651841353',
+  'CLOUDINARY_5T3PI7-agMD-P-vLTrFZmx1d8E4'
 ];
 
 var missing = required.filter(function (key) {
