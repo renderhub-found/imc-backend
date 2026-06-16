@@ -636,4 +636,107 @@ router.get('/logs', async function (req, res) {
 
 console.log('[Admin Routes] ✅ All routes registered');
 
+// ================================================
+//   TEST CLOUDINARY
+//   GET /api/admin/test-cloudinary
+// ================================================
+
+router.get('/test-cloudinary', async function (req, res) {
+  try {
+    console.log('[Admin] Testing Cloudinary...');
+
+    var cloudinaryConfig = require('../config/cloudinary');
+    var connected        = await cloudinaryConfig.testConnection();
+
+    if (!connected) {
+      return res.status(500).json({
+        success: false,
+        message: 'Cloudinary connection failed. Check CLOUDINARY_* environment variables.'
+      });
+    }
+
+    // Upload a tiny test image (1x1 pixel transparent PNG as base64)
+    var testBase64 = 'data:image/png;base64,' +
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+
+    var uploadResult = await cloudinaryConfig.cloudinary.uploader.upload(testBase64, {
+      folder:    'imc/test',
+      public_id: 'admin-test-' + Date.now()
+    });
+
+    // Clean up test image
+    await cloudinaryConfig.cloudinary.uploader.destroy(uploadResult.public_id);
+
+    await auditLog(req, 'TEST_CLOUDINARY', 'System', '', 'Connection test passed');
+
+    return res.json({
+      success:    true,
+      message:    'Cloudinary is working correctly!',
+      cloudName:  process.env.CLOUDINARY_CLOUD_NAME,
+      testUrl:    uploadResult.secure_url,
+      deleted:    true
+    });
+
+  } catch (err) {
+    console.error('[Admin] Cloudinary test error:', err.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Cloudinary test failed: ' + err.message
+    });
+  }
+});
+
+// ================================================
+//   TEST EMAIL
+//   GET /api/admin/test-email
+// ================================================
+
+router.get('/test-email', async function (req, res) {
+  try {
+    console.log('[Admin] Testing email...');
+
+    var emailService = require('../utils/emailService');
+    var verified     = await emailService.verifyTransporter();
+
+    if (!verified) {
+      return res.status(500).json({
+        success: false,
+        message: 'Email transporter verification failed. Check EMAIL_USER and EMAIL_PASS.'
+      });
+    }
+
+    var result = await emailService.sendEmail({
+      to:      process.env.EMAIL_USER,
+      subject: '[IMC Test] Email System Test — ' + new Date().toLocaleString(),
+      html:    '<div style="font-family:Inter,sans-serif;padding:20px;">' +
+               '<h2 style="color:#1a3c8f;">✅ Email Test Successful!</h2>' +
+               '<p>This confirms your Inside My Campus email system is working correctly.</p>' +
+               '<p>Time: <strong>' + new Date().toISOString() + '</strong></p>' +
+               '</div>'
+    });
+
+    await auditLog(req, 'TEST_EMAIL', 'System', '', result.success ? 'Email sent' : result.message);
+
+    if (result.success) {
+      return res.json({
+        success:   true,
+        message:   'Test email sent to ' + process.env.EMAIL_USER,
+        messageId: result.messageId
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        message: 'Email send failed: ' + result.message
+      });
+    }
+
+  } catch (err) {
+    console.error('[Admin] Email test error:', err.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Email test failed: ' + err.message
+    });
+  }
+});
+
 module.exports = router;

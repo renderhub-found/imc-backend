@@ -226,6 +226,20 @@ async function requestWithdrawal(req, res) {
 
     await ambassador.save();
 
+    // Send ambassador welcome email (non-blocking)
+try {
+  var emailService = require('../utils/emailService');
+  emailService.sendAmbassadorConfirmation(
+    req.user.email,
+    fullName,
+    refCode
+  ).then(function (r) {
+    console.log('[Ambassador] Confirmation email:', r.success ? 'sent' : 'failed');
+  });
+} catch (e) {
+  console.log('[Ambassador] Email error:', e.message);
+}
+
     console.log('[Ambassador] ✅ Withdrawal request saved');
 
     return res.status(201).json({

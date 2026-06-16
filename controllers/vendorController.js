@@ -221,6 +221,20 @@ const addProduct = async function (req, res) {
     vendor.products.push({ name, price, description, image, video, category });
     await vendor.save();
 
+    // Send confirmation email (non-blocking)
+try {
+  var emailService = require('../utils/emailService');
+  emailService.sendVendorConfirmation(
+    req.user.email,
+    req.user.firstName || 'Vendor',
+    bizName
+  ).then(function (r) {
+    console.log('[Vendor] Confirmation email:', r.success ? 'sent' : 'failed');
+  });
+} catch (e) {
+  console.log('[Vendor] Email error:', e.message);
+}
+
     var added = vendor.products[vendor.products.length - 1];
     return res.status(201).json({
       success: true,

@@ -87,6 +87,16 @@ async function register(req, res) {
 
     await user.save();
 
+    // Send welcome email (non-blocking — do not await)
+try {
+  var emailService = require('../utils/emailService');
+  emailService.sendWelcome(user.email, user.firstName).then(function (r) {
+    console.log('[Auth] Welcome email:', r.success ? 'sent' : 'failed');
+  });
+} catch (e) {
+  console.log('[Auth] Welcome email error:', e.message);
+}
+
     console.log('[Auth] ✅ Registered:', user.email);
 
     return res.status(201).json({
@@ -273,6 +283,7 @@ async function changePassword(req, res) {
 async function forgotPassword(req, res) {
   try {
     console.log('[Auth] forgotPassword called');
+    console.log('[Auth] email:', req.body.email);
 
     var email = (req.body.email || '').toLowerCase().trim();
 
@@ -285,75 +296,58 @@ async function forgotPassword(req, res) {
 
     var user = await User.findOne({ email: email });
 
+    // Always return success to prevent email enumeration
     if (!user) {
-      // Always return success — prevents email enumeration
+      console.log('[Auth] forgotPassword: email not found:', email);
       return res.json({
         success: true,
         message: 'If this email exists, a reset link has been sent.'
       });
     }
 
+    // Generate token
     var crypto     = require('crypto');
     var resetToken = crypto.randomBytes(32).toString('hex');
-    var resetHash  = crypto
-      .createHash('sha256')
-      .update(resetToken)
-      .digest('hex');
+    var resetHash  = crypto.createHash('sha256').update(resetToken).digest('hex');
 
     user.passwordResetToken   = resetHash;
-    user.passwordResetExpires = Date.now() + 60 * 60 * 1000;
+    user.passwordResetExpires = Date.now() + 60 * 60 * 1000; // 1 hour
     await user.save();
 
     var frontendUrl = process.env.FRONTEND_URL ||
       'https://resilient-ganache-be5b9c.netlify.app';
     var resetUrl = frontendUrl + '/reset-password.html?token=' + resetToken;
 
+    console.log('[Auth] Reset token saved for:', email);
     console.log('[Auth] Reset URL:', resetUrl);
 
-    // Send email if configured
-    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-      try {
-        var nodemailer  = require('nodemailer');
-        var transporter = nodemailer.createTransport({
-          service: 'gmail',
-          auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS
-          }
-        });
+    // Send email using emailService
+    var emailService = require('../utils/emailService');
+    var emailResult  = await emailService.sendPasswordReset(
+      user.email,
+      user.firstName || 'User',
+      resetUrl
+    );
 
-        await transporter.sendMail({
-          from:    '"Inside My Campus" <' + process.env.EMAIL_USER + '>',
-          to:      user.email,
-          subject: 'Reset Your Password — Inside My Campus',
-          html:
-            '<div style="font-family:Inter,sans-serif;max-width:500px;margin:0 auto;">' +
-            '<h2 style="color:#1a3c8f;">Reset Your Password</h2>' +
-            '<p>Hello ' + user.firstName + ',</p>' +
-            '<p>Click below to reset your password. Expires in 1 hour.</p>' +
-            '<a href="' + resetUrl + '" ' +
-            'style="display:inline-block;background:#1a3c8f;color:#fff;' +
-            'padding:13px 28px;border-radius:8px;text-decoration:none;' +
-            'font-weight:700;margin:16px 0;">Reset My Password</a>' +
-            '<p style="color:#888;font-size:13px;">' +
-            'Ignore this if you did not request it.</p>' +
-            '</div>'
-        });
+    console.log('[Auth] Email result:', JSON.stringify(emailResult));
 
-        console.log('[Auth] ✅ Email sent to:', email);
-      } catch (emailErr) {
-        console.error('[Auth] Email error:', emailErr.message);
-      }
+    // In development, include the token for testing
+    var responseData = {
+      success: true,
+      message: 'If this email exists, a reset link has been sent.'
+    };
+
+    if (process.env.NODE_ENV !== 'production') {
+      responseData.devResetUrl   = resetUrl;
+      responseData.emailSent     = emailResult.success;
+      responseData.emailMessage  = emailResult.message;
     }
 
-    return res.json({
-      success:  true,
-      message:  'If this email exists, a reset link has been sent.',
-      devToken: process.env.NODE_ENV !== 'production' ? resetToken : undefined
-    });
+    return res.json(responseData);
 
   } catch (err) {
     console.error('[Auth] forgotPassword error:', err.message);
+    console.error('[Auth] stack:', err.stack);
     return res.status(500).json({
       success: false,
       message: 'Could not process request: ' + err.message

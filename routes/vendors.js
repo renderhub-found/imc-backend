@@ -53,6 +53,24 @@ router.delete(
 // GET /api/vendors
 router.get('/', ctrl.getAllVendors);
 
+// POST /api/vendors/upload-image — upload product/vendor image
+router.post('/upload-image', protect, uploadMw.single('image', 'imc/vendors'),
+  function (req, res) {
+    if (!req.cloudinaryUrl) {
+      return res.status(400).json({
+        success: false,
+        message: 'No image uploaded.'
+      });
+    }
+    return res.json({
+      success:   true,
+      message:   'Image uploaded!',
+      imageUrl:  req.cloudinaryUrl,
+      publicId:  req.cloudinaryPublicId
+    });
+  }
+);
+
 // =============================================
 // /:id MUST BE THE VERY LAST ROUTE
 // =============================================
@@ -78,7 +96,7 @@ router.post('/complete-registration', protect, async function (req, res) {
         alreadyExists: true
       });
     }
-
+    var uploadMw = require('../middleware/upload');
     var ctrl = require('../controllers/vendorController');
     return ctrl.registerVendor(req, res);
 

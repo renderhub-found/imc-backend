@@ -31,4 +31,18 @@ router.delete('/:id', protect, adminOnly, ctrl.deleteNews);
 // GET    /api/news/:id
 router.get('/:id', ctrl.getNewsById);
 
+var uploadMw = require('../middleware/upload');
+
+// POST /api/news/upload-image
+router.post('/upload-image', protect, uploadMw.single('image', 'imc/news'),
+  function (req, res) {
+    if (!req.cloudinaryUrl) {
+      return res.status(400).json({ success: false, message: 'No image uploaded.' });
+    }
+    return res.json({
+      success: true, imageUrl: req.cloudinaryUrl, publicId: req.cloudinaryPublicId
+    });
+  }
+);
+
 module.exports = router;

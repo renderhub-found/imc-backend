@@ -7,6 +7,41 @@ var dotenv   = require('dotenv');
 
 dotenv.config();
 
+// ================================================
+//   INITIALIZE CLOUDINARY
+// ================================================
+
+try {
+  var cloudinaryConfig = require('./config/cloudinary');
+  // Test connection on startup (non-blocking)
+  cloudinaryConfig.testConnection().then(function (ok) {
+    if (ok) {
+      console.log('✅ Cloudinary ready');
+    } else {
+      console.warn('⚠️  Cloudinary not connected — image uploads will fail');
+    }
+  });
+} catch (cloudErr) {
+  console.error('❌ Cloudinary config error:', cloudErr.message);
+}
+
+// ================================================
+//   VERIFY EMAIL TRANSPORTER
+// ================================================
+
+try {
+  var emailService = require('./utils/emailService');
+  emailService.verifyTransporter().then(function (ok) {
+    if (ok) {
+      console.log('✅ Email transporter ready');
+    } else {
+      console.warn('⚠️  Email not configured — forgot password emails will not send');
+    }
+  });
+} catch (emailErr) {
+  console.error('❌ Email service error:', emailErr.message);
+}
+
 var app  = express();
 var PORT = process.env.PORT || 5000;
 
