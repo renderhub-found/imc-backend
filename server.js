@@ -126,7 +126,16 @@ loadRoute('./routes/auth',        '/api/auth');
 loadRoute('./routes/ambassadors', '/api/ambassadors');
 loadRoute('./routes/news',        '/api/news');
 loadRoute('./routes/courses',     '/api/courses');
-loadRoute('./routes/admin',       '/api/admin');
+// ---- ADMIN ROUTES ----
+console.log('MOUNTING_ADMIN_ROUTES...');
+try {
+  var adminRoutes = require('./routes/admin');
+  app.use('/api/admin', adminRoutes);
+  console.log('✅ Admin routes mounted');
+} catch (err) {
+  console.error('❌ Admin routes FAILED:', err.message);
+  console.error(err.stack);
+}
 loadRoute('./routes/payments',    '/api/payments');
 loadRoute('./routes/ads',         '/api/ads');
 loadRoute('./routes/contact',     '/api/contact');

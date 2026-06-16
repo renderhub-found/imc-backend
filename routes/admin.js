@@ -1,683 +1,639 @@
 'use strict';
 
-const express    = require('express');
-const router     = express.Router();
-const { protect, adminOnly } = require('../middleware/auth');
-const User            = require('../models/User');
-const Vendor          = require('../models/Vendor');
-const Ambassador      = require('../models/Ambassador');
-const News            = require('../models/News');
-const Course          = require('../models/Course');
-const Ad              = require('../models/Ad');
-const ContactMessage  = require('../models/ContactMessage');
+var express      = require('express');
+var router       = express.Router();
+var mongoose     = require('mongoose');
+var rateLimit    = require('express-rate-limit');
 
-// =============================================
-// GET PLATFORM STATS
-// GET /api/admin/stats
-// =============================================
+var { adminProtect, auditLog } = require('../middleware/adminAuth');
 
-router.get('/stats', protect, adminOnly,
-  async function (req, res) {
-    try {
-      var totalUsers       = await User.countDocuments();
-      var totalVendors     = await Vendor.countDocuments();
-      var pendingVendors   = await Vendor.countDocuments({ status: 'pending'  });
-      var approvedVendors  = await Vendor.countDocuments({ status: 'approved' });
-      var rejectedVendors  = await Vendor.countDocuments({ status: 'rejected' });
-      var totalAmbassadors = await Ambassador.countDocuments();
-      var totalNews        = await News.countDocuments();
-      var pendingNews      = await News.countDocuments({ status: 'pending'  });
-      var approvedNews     = await News.countDocuments({ status: 'approved' });
-      var totalCourses     = await Course.countDocuments();
-      var totalAds         = await Ad.countDocuments();
-      var pendingAds       = await Ad.countDocuments({ status: 'pending' });
-      var approvedAds      = await Ad.countDocuments({ status: 'approved' });
-      var totalMessages    = await ContactMessage.countDocuments();
-      var unreadMessages   = await ContactMessage.countDocuments({ isRead: false });
+var User       = require('../models/User');
+var Vendor     = require('../models/Vendor');
+var Ambassador = require('../models/Ambassador');
+var Ad         = require('../models/Ad');
+var News       = require('../models/News');
+var Course     = require('../models/Course');
+var AdminLog   = require('../models/AdminLog');
 
-      // Revenue calculation
-      var paidVendors      = await Vendor.countDocuments({ paymentStatus: 'paid' });
-      var vendorRevenue    = paidVendors * 5000;
+var Ad_model, Course_model;
+try { Ad_model     = require('../models/Ad');     } catch(e) { Ad_model = null; }
+try { Course_model = require('../models/Course'); } catch(e) { Course_model = null; }
 
-      var adDocs           = await Ad.find({ paymentStatus: 'paid' }).select('price');
-      var adRevenue        = adDocs.reduce(function (sum, a) {
-        return sum + (a.price || 0);
-      }, 0);
+console.log('[Admin Routes] Loading...');
 
-      var totalRevenue = vendorRevenue + adRevenue;
+// ---- Rate limit: 100 requests per 15 minutes per IP ----
+var adminLimiter = null;
+try {
+  adminLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max:      100,
+    message:  { success: false, message: 'Too many requests. Try again later.' }
+  });
+} catch (e) {
+  console.log('[Admin] Rate limit not available:', e.message);
+}
 
-      return res.status(200).json({
-        success: true,
-        stats: {
-          totalUsers,
-          totalVendors,
-          pendingVendors,
-          approvedVendors,
-          rejectedVendors,
-          totalAmbassadors,
-          totalNews,
-          pendingNews,
-          approvedNews,
-          totalCourses,
-          totalAds,
-          pendingAds,
-          approvedAds,
-          totalMessages,
-          unreadMessages,
-          revenue: {
-            vendors: vendorRevenue,
-            ads:     adRevenue,
-            total:   totalRevenue
-          }
+if (adminLimiter) router.use(adminLimiter);
+
+// Apply admin protection to ALL routes in this file
+router.use(adminProtect);
+
+// ================================================
+//   STATS
+//   GET /api/admin/stats
+// ================================================
+
+router.get('/stats', async function (req, res) {
+  try {
+    var totalUsers       = await User.countDocuments();
+    var totalVendors     = await Vendor.countDocuments();
+    var pendingVendors   = await Vendor.countDocuments({ status: 'pending' });
+    var approvedVendors  = await Vendor.countDocuments({ status: 'approved' });
+    var rejectedVendors  = await Vendor.countDocuments({ status: 'rejected' });
+    var totalAmbassadors = await Ambassador.countDocuments();
+    var totalNews        = await News.countDocuments();
+    var pendingNews      = await News.countDocuments({ status: 'pending' });
+    var totalCourses     = Course_model ? await Course_model.countDocuments() : 0;
+    var totalAds         = Ad_model     ? await Ad_model.countDocuments()     : 0;
+    var pendingAds       = Ad_model     ? await Ad_model.countDocuments({ status: 'pending' }) : 0;
+
+    // Revenue
+    var paidVendors   = await Vendor.find({ paymentStatus: 'paid' }).select('paymentRef');
+    var vendorRevenue = paidVendors.length * 5000;
+
+    var adRevenueDocs = Ad_model
+      ? await Ad_model.find({ paymentStatus: 'paid' }).select('price')
+      : [];
+    var adRevenue = adRevenueDocs.reduce(function (s, a) { return s + (a.price || 0); }, 0);
+
+    // Pending ambassador withdrawals
+    var ambassadors        = await Ambassador.find();
+    var pendingWithdrawals = 0;
+    ambassadors.forEach(function (a) {
+      a.withdrawals.forEach(function (w) {
+        if (w.status === 'pending') pendingWithdrawals++;
+      });
+    });
+
+    return res.json({
+      success: true,
+      stats: {
+        totalUsers,
+        totalVendors,
+        pendingVendors,
+        approvedVendors,
+        rejectedVendors,
+        totalAmbassadors,
+        totalNews,
+        pendingNews,
+        totalCourses,
+        totalAds,
+        pendingAds,
+        pendingWithdrawals,
+        revenue: {
+          vendors: vendorRevenue,
+          ads:     adRevenue,
+          total:   vendorRevenue + adRevenue
         }
-      });
-    } catch (err) {
-      console.error('Admin stats error:', err.message);
-      return res.status(500).json({
-        success: false,
-        message: err.message
-      });
-    }
-  }
-);
-
-// =============================================
-// GET ALL USERS
-// GET /api/admin/users
-// =============================================
-
-router.get('/users', protect, adminOnly,
-  async function (req, res) {
-    try {
-      var filter = {};
-      if (req.query.role)      filter.role      = req.query.role;
-      if (req.query.isBlocked) filter.isBlocked = req.query.isBlocked === 'true';
-
-      var users = await User.find(filter).sort({ createdAt: -1 });
-
-      return res.status(200).json({
-        success: true,
-        count:   users.length,
-        users:   users
-      });
-    } catch (err) {
-      console.error('Get users error:', err.message);
-      return res.status(500).json({
-        success: false,
-        message: err.message
-      });
-    }
-  }
-);
-
-// =============================================
-// BLOCK OR UNBLOCK USER
-// PUT /api/admin/users/:id/block
-// =============================================
-
-router.put('/users/:id/block', protect, adminOnly,
-  async function (req, res) {
-    try {
-      var user = await User.findByIdAndUpdate(
-        req.params.id,
-        { isBlocked: req.body.isBlocked },
-        { new: true }
-      );
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: 'User not found.'
-        });
       }
-      return res.status(200).json({
-        success: true,
-        message: 'User ' + (req.body.isBlocked ? 'blocked' : 'unblocked') + ' successfully.',
-        user:    user
-      });
-    } catch (err) {
-      console.error('Block user error:', err.message);
-      return res.status(500).json({
+    });
+  } catch (err) {
+    console.error('[Admin] stats error:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ================================================
+//   USERS
+// ================================================
+
+router.get('/users', async function (req, res) {
+  try {
+    var page  = parseInt(req.query.page)  || 1;
+    var limit = parseInt(req.query.limit) || 20;
+    var skip  = (page - 1) * limit;
+
+    var filter = {};
+    if (req.query.role)  filter.role      = req.query.role;
+    if (req.query.blocked === 'true') filter.isBlocked = true;
+
+    var users = await User.find(filter)
+      .select('-password -passwordResetToken -passwordResetExpires')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    var total = await User.countDocuments(filter);
+
+    return res.json({
+      success: true,
+      total, page, limit,
+      totalPages: Math.ceil(total / limit),
+      users: users
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.get('/users/:id', async function (req, res) {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid user ID.' });
+    }
+    var user = await User.findById(req.params.id)
+      .select('-password -passwordResetToken -passwordResetExpires');
+    if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
+    return res.json({ success: true, user: user });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.put('/users/:id/block', async function (req, res) {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid user ID.' });
+    }
+    var isBlocked = req.body.isBlocked === true || req.body.isBlocked === 'true';
+    var user = await User.findByIdAndUpdate(
+      req.params.id, { isBlocked: isBlocked }, { new: true }
+    ).select('-password');
+
+    if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
+
+    await auditLog(req,
+      isBlocked ? 'BLOCK_USER' : 'UNBLOCK_USER',
+      'User', user._id.toString(), user.email
+    );
+
+    return res.json({
+      success: true,
+      message: 'User ' + (isBlocked ? 'blocked' : 'unblocked') + '.',
+      user: user
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.put('/users/:id/role', async function (req, res) {
+  try {
+    var validRoles = ['student','vendor','ambassador','admin'];
+    var role       = req.body.role || '';
+
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({
         success: false,
-        message: err.message
+        message: 'Invalid role. Must be: ' + validRoles.join(', ')
       });
     }
+
+    var user = await User.findByIdAndUpdate(
+      req.params.id, { role: role }, { new: true }
+    ).select('-password');
+
+    if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
+
+    await auditLog(req, 'CHANGE_USER_ROLE', 'User',
+      user._id.toString(), user.email + ' → ' + role);
+
+    return res.json({ success: true, message: 'Role updated to: ' + role, user: user });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
-);
+});
 
-// =============================================
-// CHANGE USER ROLE
-// PUT /api/admin/users/:id/role
-// =============================================
+router.delete('/users/:id', async function (req, res) {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid user ID.' });
+    }
+    // Prevent deleting self
+    if (req.params.id === req.admin._id.toString()) {
+      return res.status(400).json({ success: false, message: 'Cannot delete your own account.' });
+    }
+    var user = await User.findByIdAndDelete(req.params.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
 
-router.put('/users/:id/role', protect, adminOnly,
-  async function (req, res) {
-    try {
-      var validRoles = ['student', 'vendor', 'ambassador', 'admin'];
-      if (!validRoles.includes(req.body.role)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid role. Must be one of: ' + validRoles.join(', ')
-        });
-      }
-      var user = await User.findByIdAndUpdate(
-        req.params.id,
-        { role: req.body.role },
-        { new: true }
-      );
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: 'User not found.'
-        });
-      }
-      return res.status(200).json({
-        success: true,
-        message: 'Role updated to: ' + req.body.role,
-        user:    user
-      });
-    } catch (err) {
-      console.error('Change role error:', err.message);
-      return res.status(500).json({
-        success: false,
-        message: err.message
+    await auditLog(req, 'DELETE_USER', 'User', req.params.id, user.email);
+
+    return res.json({ success: true, message: 'User deleted.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ================================================
+//   VENDORS
+// ================================================
+
+router.get('/vendors', async function (req, res) {
+  try {
+    var filter = {};
+    if (req.query.status) filter.status = req.query.status;
+
+    var vendors = await Vendor.find(filter).sort({ createdAt: -1 });
+    return res.json({ success: true, count: vendors.length, vendors: vendors });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.put('/vendors/:id/status', async function (req, res) {
+  try {
+    var allowed = ['approved','rejected','pending','suspended'];
+    var status  = req.body.status || '';
+
+    if (!allowed.includes(status)) {
+      return res.status(400).json({
+        success: false, message: 'Status must be: ' + allowed.join(', ')
       });
     }
+
+    var vendor = await Vendor.findByIdAndUpdate(
+      req.params.id, { status: status }, { new: true }
+    );
+    if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found.' });
+
+    await auditLog(req, 'UPDATE_VENDOR_STATUS', 'Vendor',
+      vendor._id.toString(), vendor.bizName + ' → ' + status);
+
+    return res.json({ success: true, message: 'Vendor ' + status + '.', vendor: vendor });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
-);
+});
 
-// =============================================
-// GET ALL VENDORS (admin view)
-// GET /api/admin/vendors
-// =============================================
+// ================================================
+//   AMBASSADORS
+// ================================================
 
-router.get('/vendors', protect, adminOnly,
-  async function (req, res) {
-    try {
-      var filter = {};
-      if (req.query.status) filter.status = req.query.status;
+router.get('/ambassadors', async function (req, res) {
+  try {
+    var ambassadors = await Ambassador.find().sort({ createdAt: -1 });
+    return res.json({ success: true, count: ambassadors.length, ambassadors: ambassadors });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
 
-      var vendors = await Vendor.find(filter).sort({ createdAt: -1 });
+router.put('/ambassadors/:id/status', async function (req, res) {
+  try {
+    var allowed = ['active','suspended'];
+    var status  = req.body.status || '';
 
-      return res.status(200).json({
-        success: true,
-        count:   vendors.length,
-        vendors: vendors
-      });
-    } catch (err) {
-      console.error('Get vendors error:', err.message);
-      return res.status(500).json({
+    if (!allowed.includes(status)) {
+      return res.status(400).json({ success: false, message: 'Status must be: active or suspended' });
+    }
+
+    var amb = await Ambassador.findByIdAndUpdate(
+      req.params.id, { status: status }, { new: true }
+    );
+    if (!amb) return res.status(404).json({ success: false, message: 'Ambassador not found.' });
+
+    await auditLog(req, 'UPDATE_AMBASSADOR_STATUS', 'Ambassador',
+      amb._id.toString(), amb.fullName + ' → ' + status);
+
+    return res.json({ success: true, message: 'Ambassador ' + status + '.', ambassador: amb });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ================================================
+//   ADS
+// ================================================
+
+router.get('/ads', async function (req, res) {
+  try {
+    if (!Ad_model) return res.json({ success: true, count: 0, ads: [] });
+    var filter = {};
+    if (req.query.status) filter.status = req.query.status;
+    var ads = await Ad_model.find(filter).sort({ createdAt: -1 });
+    return res.json({ success: true, count: ads.length, ads: ads });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.put('/ads/:id/status', async function (req, res) {
+  try {
+    if (!Ad_model) return res.status(404).json({ success: false, message: 'Ad model not loaded.' });
+    var allowed = ['approved','rejected','pending','expired'];
+    var status  = req.body.status || '';
+
+    if (!allowed.includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid status.' });
+    }
+
+    var ad = await Ad_model.findByIdAndUpdate(
+      req.params.id, { status: status }, { new: true }
+    );
+    if (!ad) return res.status(404).json({ success: false, message: 'Ad not found.' });
+
+    await auditLog(req, 'UPDATE_AD_STATUS', 'Ad',
+      ad._id.toString(), ad.title + ' → ' + status);
+
+    return res.json({ success: true, message: 'Ad ' + status + '.', ad: ad });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.delete('/ads/:id', async function (req, res) {
+  try {
+    if (!Ad_model) return res.status(404).json({ success: false, message: 'Ad model not loaded.' });
+    var ad = await Ad_model.findByIdAndDelete(req.params.id);
+    if (!ad) return res.status(404).json({ success: false, message: 'Ad not found.' });
+
+    await auditLog(req, 'DELETE_AD', 'Ad', req.params.id, ad.title);
+
+    return res.json({ success: true, message: 'Ad deleted.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ================================================
+//   NEWS
+// ================================================
+
+router.get('/news', async function (req, res) {
+  try {
+    var filter = {};
+    if (req.query.status) filter.status = req.query.status;
+    var news = await News.find(filter).sort({ createdAt: -1 });
+    return res.json({ success: true, count: news.length, news: news });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.put('/news/:id/status', async function (req, res) {
+  try {
+    var allowed = ['approved','rejected','pending'];
+    var status  = req.body.status || '';
+    if (!allowed.includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid status.' });
+    }
+
+    var updates = { status: status };
+    if (typeof req.body.pinned !== 'undefined') updates.pinned = req.body.pinned;
+
+    var newsItem = await News.findByIdAndUpdate(
+      req.params.id, updates, { new: true }
+    );
+    if (!newsItem) return res.status(404).json({ success: false, message: 'News not found.' });
+
+    await auditLog(req, 'UPDATE_NEWS_STATUS', 'News',
+      newsItem._id.toString(), newsItem.title + ' → ' + status);
+
+    return res.json({ success: true, message: 'News updated.', news: newsItem });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.delete('/news/:id', async function (req, res) {
+  try {
+    var newsItem = await News.findByIdAndDelete(req.params.id);
+    if (!newsItem) return res.status(404).json({ success: false, message: 'News not found.' });
+
+    await auditLog(req, 'DELETE_NEWS', 'News', req.params.id, newsItem.title);
+
+    return res.json({ success: true, message: 'News deleted.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ================================================
+//   COURSES
+// ================================================
+
+router.get('/courses', async function (req, res) {
+  try {
+    if (!Course_model) return res.json({ success: true, count: 0, courses: [] });
+    var courses = await Course_model.find().select('-purchases').sort({ createdAt: -1 });
+    return res.json({ success: true, count: courses.length, courses: courses });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.post('/courses', async function (req, res) {
+  try {
+    if (!Course_model) return res.status(404).json({ success: false, message: 'Course model not loaded.' });
+
+    var title       = (req.body.title       || '').trim();
+    var category    = (req.body.category    || '').trim();
+    var description = (req.body.description || '').trim();
+    var price       = parseFloat(req.body.price) || 0;
+    var fileUrl     = (req.body.fileUrl     || '').trim();
+
+    if (!title || !category || !description || !fileUrl) {
+      return res.status(400).json({
         success: false,
-        message: err.message
+        message: 'title, category, description and fileUrl are required.'
       });
     }
+
+    var course = await Course_model.create({
+      title, category, description, price,
+      isFree:     price === 0,
+      fileUrl,
+      image:      req.body.image      || '',
+      duration:   req.body.duration   || '2 hours',
+      lessons:    parseInt(req.body.lessons) || 10,
+      level:      req.body.level      || 'Beginner',
+      instructor: req.body.instructor || 'IMC Academy'
+    });
+
+    await auditLog(req, 'CREATE_COURSE', 'Course', course._id.toString(), course.title);
+
+    return res.status(201).json({ success: true, message: 'Course created!', course: course });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
-);
+});
 
-// =============================================
-// APPROVE OR REJECT VENDOR
-// PUT /api/admin/vendors/:id
-// =============================================
+router.put('/courses/:id', async function (req, res) {
+  try {
+    if (!Course_model) return res.status(404).json({ success: false, message: 'Course model not loaded.' });
 
-router.put('/vendors/:id', protect, adminOnly,
-  async function (req, res) {
-    try {
-      var allowed = ['approved', 'rejected', 'pending'];
-      if (!allowed.includes(req.body.status)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Status must be: approved, rejected or pending.'
-        });
-      }
+    var updates = {};
+    var fields = ['title','category','description','price','fileUrl','image',
+                  'duration','lessons','level','instructor'];
+    fields.forEach(function (f) {
+      if (req.body[f] !== undefined) updates[f] = req.body[f];
+    });
+    if (updates.price !== undefined) updates.isFree = parseFloat(updates.price) === 0;
 
-      var vendor = await Vendor.findByIdAndUpdate(
-        req.params.id,
-        { status: req.body.status },
-        { new: true }
-      );
+    var course = await Course_model.findByIdAndUpdate(
+      req.params.id, updates, { new: true }
+    );
+    if (!course) return res.status(404).json({ success: false, message: 'Course not found.' });
 
-      if (!vendor) {
-        return res.status(404).json({
-          success: false,
-          message: 'Vendor not found.'
-        });
-      }
+    await auditLog(req, 'UPDATE_COURSE', 'Course', course._id.toString(), course.title);
 
-      return res.status(200).json({
-        success: true,
-        message: 'Vendor status updated to: ' + req.body.status,
-        vendor:  vendor
-      });
-    } catch (err) {
-      console.error('Update vendor status error:', err.message);
-      return res.status(500).json({
-        success: false,
-        message: err.message
-      });
-    }
+    return res.json({ success: true, message: 'Course updated.', course: course });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
-);
+});
 
-// =============================================
-// GET ALL AMBASSADORS
-// GET /api/admin/ambassadors
-// =============================================
+router.delete('/courses/:id', async function (req, res) {
+  try {
+    if (!Course_model) return res.status(404).json({ success: false, message: 'Course model not loaded.' });
+    var course = await Course_model.findByIdAndDelete(req.params.id);
+    if (!course) return res.status(404).json({ success: false, message: 'Course not found.' });
 
-router.get('/ambassadors', protect, adminOnly,
-  async function (req, res) {
-    try {
-      var ambassadors = await Ambassador.find().sort({ createdAt: -1 });
+    await auditLog(req, 'DELETE_COURSE', 'Course', req.params.id, course.title);
 
-      return res.status(200).json({
-        success:     true,
-        count:       ambassadors.length,
-        ambassadors: ambassadors
-      });
-    } catch (err) {
-      console.error('Get ambassadors error:', err.message);
-      return res.status(500).json({
-        success: false,
-        message: err.message
-      });
-    }
+    return res.json({ success: true, message: 'Course deleted.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
-);
+});
 
-// =============================================
-// GET ALL NEWS (admin view including pending)
-// GET /api/admin/news
-// =============================================
+// ================================================
+//   PAYMENTS
+// ================================================
 
-router.get('/news', protect, adminOnly,
-  async function (req, res) {
-    try {
-      var filter = {};
-      if (req.query.status) filter.status = req.query.status;
+router.get('/payments', async function (req, res) {
+  try {
+    var paidVendors = await Vendor.find({ paymentStatus: 'paid' })
+      .select('bizName email paymentRef createdAt');
 
-      var news = await News.find(filter).sort({ createdAt: -1 });
+    var paidAds = Ad_model
+      ? await Ad_model.find({ paymentStatus: 'paid' }).select('title ownerEmail paymentRef price createdAt')
+      : [];
 
-      return res.status(200).json({
-        success: true,
-        count:   news.length,
-        news:    news
-      });
-    } catch (err) {
-      console.error('Get news error:', err.message);
-      return res.status(500).json({
-        success: false,
-        message: err.message
-      });
-    }
-  }
-);
-
-// =============================================
-// APPROVE REJECT OR PIN NEWS
-// PUT /api/admin/news/:id
-// =============================================
-
-router.put('/news/:id', protect, adminOnly,
-  async function (req, res) {
-    try {
-      var updates = {};
-      if (req.body.status !== undefined) updates.status = req.body.status;
-      if (req.body.pinned !== undefined) updates.pinned = req.body.pinned;
-
-      var news = await News.findByIdAndUpdate(
-        req.params.id,
-        updates,
-        { new: true }
-      );
-
-      if (!news) {
-        return res.status(404).json({
-          success: false,
-          message: 'News not found.'
-        });
-      }
-
-      return res.status(200).json({
-        success: true,
-        message: 'News updated.',
-        news:    news
-      });
-    } catch (err) {
-      console.error('Update news error:', err.message);
-      return res.status(500).json({
-        success: false,
-        message: err.message
-      });
-    }
-  }
-);
-
-// =============================================
-// GET ALL ADS (admin view)
-// GET /api/admin/ads
-// =============================================
-
-router.get('/ads', protect, adminOnly,
-  async function (req, res) {
-    try {
-      var filter = {};
-      if (req.query.status) filter.status = req.query.status;
-
-      var ads = await Ad.find(filter).sort({ createdAt: -1 });
-
-      return res.status(200).json({
-        success: true,
-        count:   ads.length,
-        ads:     ads
-      });
-    } catch (err) {
-      console.error('Get ads error:', err.message);
-      return res.status(500).json({
-        success: false,
-        message: err.message
-      });
-    }
-  }
-);
-
-// =============================================
-// APPROVE OR REJECT AD
-// PUT /api/admin/ads/:id
-// =============================================
-
-router.put('/ads/:id', protect, adminOnly,
-  async function (req, res) {
-    try {
-      var allowed = ['approved', 'rejected', 'pending', 'expired'];
-      if (!allowed.includes(req.body.status)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid status.'
-        });
-      }
-
-      var ad = await Ad.findByIdAndUpdate(
-        req.params.id,
-        { status: req.body.status },
-        { new: true }
-      );
-
-      if (!ad) {
-        return res.status(404).json({
-          success: false,
-          message: 'Ad not found.'
-        });
-      }
-
-      return res.status(200).json({
-        success: true,
-        message: 'Ad status updated to: ' + req.body.status,
-        ad:      ad
-      });
-    } catch (err) {
-      console.error('Update ad error:', err.message);
-      return res.status(500).json({
-        success: false,
-        message: err.message
-      });
-    }
-  }
-);
-
-// =============================================
-// GET ALL COURSES (admin view)
-// GET /api/admin/courses
-// =============================================
-
-router.get('/courses', protect, adminOnly,
-  async function (req, res) {
-    try {
-      var courses = await Course.find()
-        .select('-purchases')
-        .sort({ createdAt: -1 });
-
-      return res.status(200).json({
-        success: true,
-        count:   courses.length,
-        courses: courses
-      });
-    } catch (err) {
-      console.error('Get courses error:', err.message);
-      return res.status(500).json({
-        success: false,
-        message: err.message
-      });
-    }
-  }
-);
-
-// =============================================
-// GET ALL CONTACT MESSAGES
-// GET /api/admin/messages
-// =============================================
-
-router.get('/messages', protect, adminOnly,
-  async function (req, res) {
-    try {
-      var filter = {};
-      if (req.query.isRead !== undefined) {
-        filter.isRead = req.query.isRead === 'true';
-      }
-
-      var messages = await ContactMessage.find(filter)
-        .sort({ createdAt: -1 });
-
-      return res.status(200).json({
-        success:  true,
-        count:    messages.length,
-        messages: messages
-      });
-    } catch (err) {
-      console.error('Get messages error:', err.message);
-      return res.status(500).json({
-        success: false,
-        message: err.message
-      });
-    }
-  }
-);
-
-// =============================================
-// MARK MESSAGE AS READ
-// PUT /api/admin/messages/:id/read
-// =============================================
-
-router.put('/messages/:id/read', protect, adminOnly,
-  async function (req, res) {
-    try {
-      var msg = await ContactMessage.findByIdAndUpdate(
-        req.params.id,
-        { isRead: true },
-        { new: true }
-      );
-
-      if (!msg) {
-        return res.status(404).json({
-          success: false,
-          message: 'Message not found.'
-        });
-      }
-
-      return res.status(200).json({
-        success: true,
-        message: 'Marked as read.',
-        data:    msg
-      });
-    } catch (err) {
-      return res.status(500).json({
-        success: false,
-        message: err.message
-      });
-    }
-  }
-);
-
-// =============================================
-// GET ALL WITHDRAWAL REQUESTS
-// GET /api/admin/withdrawals
-// =============================================
-
-router.get('/withdrawals', protect, adminOnly,
-  async function (req, res) {
-    try {
-      var ambassadors = await Ambassador.find({
-        'withdrawals.0': { $exists: true }
-      }).select('fullName email withdrawals');
-
-      var allWithdrawals = [];
-
-      ambassadors.forEach(function (amb) {
-        amb.withdrawals.forEach(function (w) {
-          allWithdrawals.push({
-            _id:         w._id,
-            ambName:     amb.fullName,
-            ambEmail:    amb.email,
-            accountName: w.accountName,
-            bankName:    w.bankName,
-            accountNum:  w.accountNum,
-            amount:      w.amount,
-            status:      w.status,
-            date:        w.date
+    var coursePurchases = [];
+    if (Course_model) {
+      var courses = await Course_model.find({ 'purchases.0': { $exists: true } })
+        .select('title price purchases');
+      courses.forEach(function (c) {
+        c.purchases.forEach(function (p) {
+          coursePurchases.push({
+            type:      'Course Purchase',
+            name:      c.title,
+            email:     p.userEmail,
+            amount:    c.price || p.amount,
+            ref:       p.paymentRef,
+            date:      p.date || c.createdAt
           });
         });
       });
-
-      // Sort by date newest first
-      allWithdrawals.sort(function (a, b) {
-        return new Date(b.date) - new Date(a.date);
-      });
-
-      return res.status(200).json({
-        success:     true,
-        count:       allWithdrawals.length,
-        withdrawals: allWithdrawals
-      });
-    } catch (err) {
-      console.error('Get withdrawals error:', err.message);
-      return res.status(500).json({
-        success: false,
-        message: err.message
-      });
     }
+
+    var vendorPayments = paidVendors.map(function (v) {
+      return { type: 'Vendor Registration', name: v.bizName,
+               email: v.email, amount: 5000, ref: v.paymentRef, date: v.createdAt };
+    });
+
+    var adPayments = paidAds.map(function (a) {
+      return { type: 'Ad Posting', name: a.title,
+               email: a.ownerEmail, amount: a.price, ref: a.paymentRef, date: a.createdAt };
+    });
+
+    var all = vendorPayments.concat(adPayments).concat(coursePurchases);
+    all.sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
+
+    var total = all.reduce(function (s, p) { return s + (p.amount || 0); }, 0);
+
+    return res.json({ success: true, count: all.length, totalRevenue: total, payments: all });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
-);
+});
 
-// =============================================
-// UPDATE WITHDRAWAL STATUS
-// PUT /api/admin/withdrawals/:ambId/:withdrawalId
-// =============================================
+// ================================================
+//   WITHDRAWALS
+// ================================================
 
-router.put('/withdrawals/:ambId/:withdrawalId', protect, adminOnly,
-  async function (req, res) {
-    try {
-      var allowed = ['pending', 'approved', 'paid', 'rejected'];
-      if (!allowed.includes(req.body.status)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid status.'
+router.get('/withdrawals', async function (req, res) {
+  try {
+    var ambassadors = await Ambassador.find({
+      'withdrawals.0': { $exists: true }
+    }).select('fullName email withdrawals');
+
+    var all = [];
+    ambassadors.forEach(function (a) {
+      a.withdrawals.forEach(function (w) {
+        all.push({
+          _id:         w._id,
+          ambId:       a._id,
+          ambName:     a.fullName,
+          ambEmail:    a.email,
+          accountName: w.accountName,
+          bankName:    w.bankName,
+          accountNum:  w.accountNum,
+          amount:      w.amount,
+          status:      w.status,
+          date:        w.date
         });
-      }
-
-      var ambassador = await Ambassador.findById(req.params.ambId);
-
-      if (!ambassador) {
-        return res.status(404).json({
-          success: false,
-          message: 'Ambassador not found.'
-        });
-      }
-
-      var withdrawal = ambassador.withdrawals.id(req.params.withdrawalId);
-
-      if (!withdrawal) {
-        return res.status(404).json({
-          success: false,
-          message: 'Withdrawal not found.'
-        });
-      }
-
-      withdrawal.status = req.body.status;
-      await ambassador.save();
-
-      return res.status(200).json({
-        success: true,
-        message: 'Withdrawal status updated to: ' + req.body.status
       });
-    } catch (err) {
-      console.error('Update withdrawal error:', err.message);
-      return res.status(500).json({
-        success: false,
-        message: err.message
-      });
+    });
+
+    all.sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
+
+    return res.json({ success: true, count: all.length, withdrawals: all });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.put('/withdrawals/:ambId/:withdrawalId', async function (req, res) {
+  try {
+    var allowed = ['pending','approved','paid','rejected'];
+    var status  = req.body.status || '';
+    if (!allowed.includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid status.' });
     }
+
+    var amb = await Ambassador.findById(req.params.ambId);
+    if (!amb) return res.status(404).json({ success: false, message: 'Ambassador not found.' });
+
+    var w = amb.withdrawals.id(req.params.withdrawalId);
+    if (!w) return res.status(404).json({ success: false, message: 'Withdrawal not found.' });
+
+    w.status = status;
+    await amb.save();
+
+    await auditLog(req, 'UPDATE_WITHDRAWAL', 'Withdrawal',
+      req.params.withdrawalId, amb.fullName + ' ₦' + w.amount + ' → ' + status);
+
+    return res.json({ success: true, message: 'Withdrawal ' + status + '.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
-);
+});
 
-// =============================================
-// GET PAYMENT RECORDS
-// GET /api/admin/payments
-// =============================================
+// ================================================
+//   AUDIT LOGS
+// ================================================
 
-router.get('/payments', protect, adminOnly,
-  async function (req, res) {
-    try {
-      var paidVendors = await Vendor.find({
-        paymentStatus: 'paid'
-      }).select('bizName email paymentRef createdAt');
+router.get('/logs', async function (req, res) {
+  try {
+    var page  = parseInt(req.query.page)  || 1;
+    var limit = parseInt(req.query.limit) || 50;
+    var skip  = (page - 1) * limit;
 
-      var paidAds = await Ad.find({
-        paymentStatus: 'paid'
-      }).select('title ownerEmail paymentRef price createdAt');
+    var logs = await AdminLog.find()
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
 
-      var vendorPayments = paidVendors.map(function (v) {
-        return {
-          type:      'Vendor Registration',
-          name:      v.bizName,
-          email:     v.email,
-          amount:    5000,
-          ref:       v.paymentRef,
-          date:      v.createdAt
-        };
-      });
+    var total = await AdminLog.countDocuments();
 
-      var adPayments = paidAds.map(function (a) {
-        return {
-          type:      'Ad Posting',
-          name:      a.title,
-          email:     a.ownerEmail,
-          amount:    a.price,
-          ref:       a.paymentRef,
-          date:      a.createdAt
-        };
-      });
-
-      var allPayments = vendorPayments.concat(adPayments);
-
-      allPayments.sort(function (a, b) {
-        return new Date(b.date) - new Date(a.date);
-      });
-
-      var totalRevenue = allPayments.reduce(function (sum, p) {
-        return sum + (p.amount || 0);
-      }, 0);
-
-      return res.status(200).json({
-        success:      true,
-        count:        allPayments.length,
-        totalRevenue: totalRevenue,
-        payments:     allPayments
-      });
-    } catch (err) {
-      console.error('Get payments error:', err.message);
-      return res.status(500).json({
-        success: false,
-        message: err.message
-      });
-    }
+    return res.json({ success: true, total, page, logs: logs });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
-);
+});
+
+console.log('[Admin Routes] ✅ All routes registered');
 
 module.exports = router;
