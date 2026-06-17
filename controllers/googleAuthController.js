@@ -1,18 +1,9 @@
 'use strict';
 
-var { OAuth2Client } = require('google-auth-library');
-var jwt              = require('jsonwebtoken');
-var User             = require('../models/User');
-
-var client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+var jwt             = require('jsonwebtoken');
+var User            = require('../models/User');
 
 console.log('[GoogleAuth] Controller loaded');
-console.log('[GoogleAuth] GOOGLE_CLIENT_ID:', process.env.GOOGLE_CLIENT_ID ? 'SET ✅' : 'NOT SET ❌');
-
-// ================================================
-//   GOOGLE LOGIN / REGISTER
-//   POST /api/auth/google
-// ================================================
 
 async function googleAuth(req, res) {
   try {
@@ -21,7 +12,7 @@ async function googleAuth(req, res) {
     if (!credential) {
       return res.status(400).json({
         success: false,
-        message: 'Google credential token is required.'
+        message: 'Google credential is required.'
       });
     }
 
@@ -32,9 +23,10 @@ async function googleAuth(req, res) {
       });
     }
 
-    console.log('[GoogleAuth] Verifying Google token...');
+    // Verify with google-auth-library
+    var OAuth2Client = require('google-auth-library').OAuth2Client;
+    var client       = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-    // Verify the token with Google
     var ticket;
     try {
       ticket = await client.verifyIdToken({
@@ -50,11 +42,10 @@ async function googleAuth(req, res) {
     }
 
     var payload = ticket.getPayload();
-
     if (!payload) {
       return res.status(401).json({
         success: false,
-        message: 'Could not read Google account information.'
+        message: 'Could not read Google account info.'
       });
     }
 
@@ -65,7 +56,7 @@ async function googleAuth(req, res) {
     var picture   = payload.picture     || '';
     var verified  = payload.email_verified || false;
 
-    console.log('[GoogleAuth] Google user:', email, '| verified:', verified);
+    console.log('[GoogleAuth] User:', email);
 
     if (!email) {
       return res.status(400).json({
@@ -74,48 +65,33 @@ async function googleAuth(req, res) {
       });
     }
 
-    // Find existing user by email OR googleId
+    // Find by email or googleId
     var user = await User.findOne({
-      $or: [
-        { email:    email    },
-        { googleId: googleId }
-      ]
+      $or: [{ email: email }, { googleId: googleId }]
     });
 
     if (user) {
-      // Existing user — update Google info if needed
-      var updated = false;
-
-      if (!user.googleId) {
-        user.googleId  = googleId;
-        updated = true;
-      }
-      if (!user.isVerified) {
-        user.isVerified = verified;
-        updated = true;
-      }
+      // Update Google fields if missing
+      var changed = false;
+      if (!user.googleId)           { user.googleId  = googleId;  changed = true; }
+      if (!user.isVerified)         { user.isVerified = verified;  changed = true; }
       if (!user.profilePhoto && picture) {
-        user.profilePhoto = picture;
-        updated = true;
+        user.profilePhoto = picture;  changed = true;
       }
-
-      if (updated) {
-        await user.save();
-        console.log('[GoogleAuth] Existing user updated:', email);
-      }
+      if (changed) await user.save({ validateBeforeSave: false });
 
       if (user.isBlocked) {
         return res.status(403).json({
           success: false,
-          message: 'Account is suspended. Contact support.'
+          message: 'Account suspended. Contact support.'
         });
       }
 
-      console.log('[GoogleAuth] ✅ Existing user logged in:', email);
+      console.log('[GoogleAuth] Existing user login:', email);
 
     } else {
-      // New user — create account
-      console.log('[GoogleAuth] Creating new user from Google:', email);
+      // Create new user
+      console.log('[GoogleAuth] Creating new user:', email);
 
       user = new User({
         firstName:    firstName,
@@ -125,23 +101,19 @@ async function googleAuth(req, res) {
         profilePhoto: picture,
         isVerified:   verified,
         role:         'student',
-        password:     null  // no password for Google users
+        password:     undefined
       });
 
-      // Skip password validation for Google users
       await user.save({ validateBeforeSave: false });
 
-      console.log('[GoogleAuth] ✅ New user created:', email);
-
-      // Send welcome email non-blocking
+      // Welcome email non-blocking
       try {
-        var emailService = require('../utils/emailService');
-        emailService.sendWelcome(email, firstName).catch(function () {});
+        var emailSvc = require('../utils/emailService');
+        emailSvc.sendWelcome(email, firstName).catch(function () {});
       } catch (e) {}
     }
 
-    // Generate JWT
-    var token = jwt.sign(
+    var token = require('jsonwebtoken').sign(
       { id: user._id },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
@@ -165,7 +137,6 @@ async function googleAuth(req, res) {
 
   } catch (err) {
     console.error('[GoogleAuth] Error:', err.message);
-    console.error('[GoogleAuth] Stack:', err.stack);
     return res.status(500).json({
       success: false,
       message: 'Google login failed: ' + err.message

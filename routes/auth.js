@@ -67,16 +67,15 @@ router.put ('/change-password', protect, ctrl.changePassword);
 
 console.log('=== AUTH ROUTES REGISTERED ===');
 
-// ---- Google OAuth ----
-var googleCtrl = null;
+// POST /api/auth/google
 try {
-  googleCtrl = require('../controllers/googleAuthController');
+  var googleCtrl = require('../controllers/googleAuthController');
   router.post('/google', googleCtrl.googleAuth);
-  console.log('[Auth Routes] Google OAuth route registered');
+  console.log('[Auth Routes] Google OAuth registered');
 } catch (err) {
-  console.warn('[Auth Routes] Google OAuth not available:', err.message);
+  console.warn('[Auth Routes] Google OAuth unavailable:', err.message);
   router.post('/google', function (req, res) {
-    res.status(503).json({ success: false, message: 'Google login not configured.' });
+    res.status(503).json({ success: false, message: 'Google login not available.' });
   });
 }
 

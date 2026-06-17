@@ -193,6 +193,8 @@ try {
 loadRoute('./routes/payments',    '/api/payments');
 loadRoute('./routes/ads',         '/api/ads');
 loadRoute('./routes/contact',     '/api/contact');
+loadRoute('./routes/events', '/api/events');
+loadRoute('./routes/notifications', '/api/notifications');
 
 // Vendor routes inline
 (function () {
