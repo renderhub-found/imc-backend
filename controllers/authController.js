@@ -139,7 +139,18 @@ try {
 
 async function login(req, res) {
   try {
-    console.log('[Auth] login called — email:', req.body.email);
+    // Temporary diagnostic log
+    console.log('[Auth] LOGIN BODY:', req.body);
+    console.log('[Auth] Content-Type:', req.headers['content-type']);
+
+    // Guard: body parser may not have run
+    if (!req.body) {
+      console.error('[Auth] req.body is undefined — express.json() not running');
+      return res.status(400).json({
+        success: false,
+        message: 'Request body missing. Server configuration error.'
+      });
+    }
 
     var email    = (req.body.email    || '').toLowerCase().trim();
     var password = req.body.password  || '';
@@ -147,7 +158,7 @@ async function login(req, res) {
     if (!email || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Please enter your email and password.'
+        message: 'Email and password are required.'
       });
     }
 
@@ -175,17 +186,32 @@ async function login(req, res) {
       });
     }
 
-    console.log('[Auth] ✅ Login:', user.email, '| role:', user.role);
+    var token = require('jsonwebtoken').sign(
+      { id: user._id },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+    );
+
+    console.log('[Auth] ✅ Login success:', user.email, '| role:', user.role);
 
     return res.status(200).json({
       success: true,
-      message: 'Login successful! Welcome back.',
-      token:   generateToken(user._id),
-      user:    buildUser(user)
+      message: 'Login successful!',
+      token:   token,
+      user: {
+        id:           user._id,
+        firstName:    user.firstName,
+        lastName:     user.lastName,
+        email:        user.email,
+        role:         user.role,
+        university:   user.university   || '',
+        profilePhoto: user.profilePhoto || ''
+      }
     });
 
   } catch (err) {
     console.error('[Auth] login error:', err.message);
+    console.error('[Auth] login stack:', err.stack);
     return res.status(500).json({
       success: false,
       message: 'Login failed: ' + err.message
