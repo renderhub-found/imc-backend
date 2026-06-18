@@ -83,24 +83,15 @@ if (!process.env.JWT_SECRET) {
 }
 
 // ================================================
-//   MIDDLEWARE
+//   CORS — handles preflight + production origins
 // ================================================
 
-// Webhook needs raw body before json parser
-app.use(
-  '/api/payments/webhook',
-  express.raw({ type: 'application/json' })
-);
-
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// CORS
 var allowedOrigins = [
   'http://127.0.0.1:5500',
   'http://localhost:5500',
   'http://localhost:3000',
   'https://resilient-ganache-be5b9c.netlify.app',
+  'https://insidemycampus.netlify.app',
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
@@ -108,7 +99,7 @@ app.use(function (req, res, next) {
   var origin = req.headers.origin;
 
   if (origin && allowedOrigins.indexOf(origin) !== -1) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Origin',      origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
   } else if (!origin) {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -119,18 +110,11 @@ app.use(function (req, res, next) {
   res.setHeader('Access-Control-Allow-Headers',
     'Content-Type, Authorization, X-Requested-With');
 
+  // Handle OPTIONS preflight immediately
   if (req.method === 'OPTIONS') {
-    console.log('OPTIONS preflight for: ' + req.originalUrl);
     return res.status(200).end();
   }
 
-  next();
-});
-
-// Request logger
-app.use(function (req, res, next) {
-  console.log(req.method + ' ' + req.originalUrl +
-    ' origin:' + (req.headers.origin || 'none'));
   next();
 });
 

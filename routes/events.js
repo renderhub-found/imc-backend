@@ -1,27 +1,29 @@
 'use strict';
 
-var express   = require('express');
-var router    = express.Router();
-var ctrl      = require('../controllers/eventController');
+var express     = require('express');
+var router      = express.Router();
+var ctrl        = require('../controllers/eventController');
 var { protect } = require('../middleware/auth');
 
-console.log('[Event Routes] Loading...');
+console.log('[Event Routes] Registering...');
 
-// Public
-router.get('/',            ctrl.getAllEvents);
-router.get('/my-tickets',  protect, ctrl.getMyTickets);
+// ---- Public ----
+router.get('/', ctrl.getAllEvents);
+
+// ---- Protected static — BEFORE /:id ----
 router.get('/my-events',   protect, ctrl.getMyEvents);
-
-// Protected
+router.get('/my-tickets',  protect, ctrl.getMyTickets);
 router.post('/',           protect, ctrl.createEvent);
 
-// Dynamic LAST
-router.get('/:id',         ctrl.getEventById);
-router.put('/:id',         protect, ctrl.updateEvent);
-router.delete('/:id',      protect, ctrl.deleteEvent);
-router.post('/:id/tickets',              protect, ctrl.createTicket);
-router.post('/:id/tickets/:ticketId/purchase', protect, ctrl.purchaseTicket);
+// ---- Dynamic /:id routes ----
+router.get('/:id',                  ctrl.getEventById);
+router.put('/:id',           protect, ctrl.updateEvent);
+router.delete('/:id',        protect, ctrl.deleteEvent);
+router.get('/:id/analytics', protect, ctrl.getEventAnalytics);
+router.post('/:id/withdraw', protect, ctrl.requestWithdrawal);
+router.post('/:id/tickets',  protect, ctrl.addTicketType);
+router.post('/:id/tickets/:ticketTypeId/purchase', protect, ctrl.purchaseTicket);
 
-console.log('[Event Routes] All registered');
+console.log('[Event Routes] ✅ All registered');
 
 module.exports = router;
