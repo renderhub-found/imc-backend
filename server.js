@@ -104,7 +104,7 @@ var allowedOrigins = [
   'http://127.0.0.1:5500',
   'http://localhost:5500',
   'http://localhost:3000',
-  'https://resilient-ganache-be5b9c.netlify.app',
+  'https://insidemycampus-five.vercel.app',
   'https://insidemycampus.netlify.app',
   process.env.FRONTEND_URL
 ].filter(Boolean);
