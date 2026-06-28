@@ -1,5 +1,5 @@
 'use strict';
-
+const { uploadImage } = require('../middleware/upload');
 var express     = require('express');
 var router      = express.Router();
 var ctrl        = require('../controllers/eventController');

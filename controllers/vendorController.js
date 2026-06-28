@@ -1,5 +1,5 @@
 'use strict';
-
+const { uploadToCloudinary } = require('../middleware/upload');
 const Vendor = require('../models/Vendor');
 const User   = require('../models/User');
 
@@ -59,6 +59,7 @@ const getAllProducts = async function (req, res) {
           category:   p.category || v.category,
           vendorId:   v._id,
           vendorName: v.bizName,
+          vendorWhatsAPP:  v.whatsApp,
           university: v.university
         });
       });
@@ -207,8 +208,23 @@ const addProduct = async function (req, res) {
     var name        = (req.body.name        || '').trim();
     var price       = parseFloat(req.body.price) || 0;
     var description = (req.body.description || '').trim();
-    var image       = (req.body.image       || '').trim();
-    var video       = (req.body.video       || '').trim();
+    var image = '';
+    var video = '';
+
+    if (req.files && req.files.image && req.files.image[0]) {
+      var imgRes = await uploadToCloudinary(
+        req.files.image[0].buffer, 'imc/products', 'image'
+      );
+      image = imgRes.secure_url;
+    }
+
+    if (req.files && req.files.video && req.files.video[0]) {
+      var vidRes = await uploadToCloudinary(
+        req.files.video[0].buffer, 'imc/products', 'video'
+      );
+      video = vidRes.secure_url;
+    }
+    
     var category    = (req.body.category    || vendor.category).trim();
 
     if (!name || !price || !description) {
@@ -340,6 +356,7 @@ async function updateVendorProfile(req, res) {
     if (req.body.description) updates.description = req.body.description.trim();
     if (req.body.whatsApp)    updates.whatsApp    = req.body.whatsApp.trim();
     if (req.body.category)    updates.category    = req.body.category.trim();
+    if (req.body.campusLocation) updates.campusLocation = req.body.campusLocation.trim();
 
     var updated = await Vendor.findByIdAndUpdate(vendor._id, updates, { new: true });
 
@@ -350,6 +367,107 @@ async function updateVendorProfile(req, res) {
   }
 }
 
+// ================================================
+//   UPLOAD VENDOR PROFILE PICTURE
+//   PUT /api/vendors/profile-picture
+//   Requires: login token, vendor exists
+// ================================================
+
+const uploadProfilePicture = async function (req, res) {
+  try {
+    var vendor = await Vendor.findOne({ user: req.user._id });
+
+    if (!vendor) {
+      return res.status(404).json({
+        success: false,
+        message: 'Vendor profile not found.'
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No image file provided.'
+      });
+    }
+
+    var result = await uploadToCloudinary(
+      req.file.buffer,
+      'imc/vendor-profiles',
+      'image'
+    );
+
+    vendor.profilePicture = result.secure_url;
+    await vendor.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Profile picture updated!',
+      profilePicture: vendor.profilePicture
+    });
+
+  } catch (err) {
+    console.error('Upload profile picture error:', err.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Could not upload picture: ' + err.message
+    });
+  }
+};
+
+const Notification = require('../models/Notification');
+
+// ================================================
+//   LOG PRODUCT ORDER LEAD (when customer clicks Order)
+//   POST /api/vendors/products/:productId/lead
+//   Public — no login required to express interest
+// ================================================
+
+const logProductLead = async function (req, res) {
+  try {
+    var vendor = await Vendor.findOne({
+      'products._id': req.params.productId
+    });
+
+    if (!vendor) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found.'
+      });
+    }
+
+    var product = vendor.products.find(function (p) {
+      return p._id.toString() === req.params.productId;
+    });
+
+    var customerName = (req.body.customerName || 'A customer').trim();
+
+    await Notification.create({
+      user:               vendor.user,
+      type:               'order_lead',
+      title:              'New Order Interest!',
+      message:            customerName + ' is interested in "' + (product ? product.name : 'your product') + '"',
+      relatedProductId:   req.params.productId,
+      relatedProductName: product ? product.name : '',
+      customerName:       customerName,
+      read:               false
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Vendor notified.'
+    });
+
+  } catch (err) {
+    console.error('Log product lead error:', err.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Could not log lead: ' + err.message
+    });
+  }
+};
+
+
 module.exports = {
   getAllVendors:       getAllVendors,
   getAllProducts:      getAllProducts,
@@ -358,5 +476,7 @@ module.exports = {
   addProduct:         addProduct,
   deleteProduct:      deleteProduct,
   getVendorById:      getVendorById,
-  updateVendorProfile: updateVendorProfile
+  updateVendorProfile: updateVendorProfile,
+  uploadProfilePicture: uploadProfilePicture
+  logProductLead:     logProductLead,
 };

@@ -1,6 +1,6 @@
 
   'use strict';
-
+const { uploadImage } = require('../middleware/upload');
 const express     = require('express');
 const router      = express.Router();
 const ctrl        = require('../controllers/vendorController');
@@ -38,10 +38,15 @@ router.post('/register', function (req, res, next) {
 }, protect, ctrl.registerVendor);
 
 // POST /api/vendors/products
-router.post('/products', function (req, res, next) {
-  console.log('ROUTE HIT: POST /products');
-  next();
-}, protect, ctrl.addProduct);
+router.post(
+  '/products',
+  protect,
+  uploadMedia.fields([
+    { name: 'image', maxCount: 1 },
+    { name: 'video', maxCount: 1 }
+  ]),
+  ctrl.addProduct
+);
 
 // DELETE /api/vendors/products/:productId
 router.delete(
@@ -70,6 +75,16 @@ router.post('/upload-image', protect, uploadMw.single('image', 'imc/vendors'),
     });
   }
 );
+
+// PUT /api/vendors/profile-picture
+router.put(
+  '/profile-picture',
+  protect,
+  uploadImage.single('image'),
+  ctrl.uploadProfilePicture
+);
+
+router.post('/products/:productId/lead', ctrl.logProductLead);
 
 // =============================================
 // /:id MUST BE THE VERY LAST ROUTE

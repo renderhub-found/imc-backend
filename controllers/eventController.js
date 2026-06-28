@@ -1,5 +1,5 @@
 'use strict';
-
+const { uploadToCloudinary } = require('../middleware/upload');
 var Event  = require('../models/Event');
 var crypto = require('crypto');
 
@@ -98,7 +98,20 @@ async function createEvent(req, res) {
     var eventTime   = (req.body.eventTime   || '').trim();
     var contactInfo = (req.body.contactInfo || '').trim();
     var eventType   = req.body.eventType === 'paid' ? 'paid' : 'free';
-    var coverImage  = req.cloudinaryUrl || (req.body.coverImage || '').trim();
+    var coverImage = '';
+    if (req.file) {
+      var coverRes = await uploadToCloudinary(
+        req.file.buffer, 'imc/events', 'image'
+      );
+      coverImage = coverRes.secure_url;
+    }
+
+    router.post(
+  '/',
+  protect,
+  uploadImage.single('coverImage'),
+  eventController.createEvent
+);
 
     var missing = [];
     if (!title)      missing.push('title');

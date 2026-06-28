@@ -131,7 +131,82 @@ const getNewsById = async function (req, res) {
   }
 };
 
+const { uploadToCloudinary } = require('../middleware/upload');
+
+// ================================================
+//   ADMIN: CREATE & PUBLISH NEWS DIRECTLY
+//   POST /api/news/admin/create
+//   Admin only — supports image + video file upload
+// ================================================
+
+const createNewsAdmin = async function (req, res) {
+  try {
+    var title    = (req.body.title    || '').trim();
+    var category = (req.body.category || '').trim();
+    var content  = (req.body.content  || '').trim();
+    var status   = req.body.status === 'draft' ? 'pending' : 'approved';
+
+    if (!title || !content) {
+      return res.status(400).json({
+        success: false,
+        message: 'Title and content are required.'
+      });
+    }
+
+    var imageUrl = '';
+    var videoUrl = '';
+
+    // req.files comes from multer .fields() — see route below
+    if (req.files && req.files.image && req.files.image[0]) {
+      var imgResult = await uploadToCloudinary(
+        req.files.image[0].buffer,
+        'imc/news',
+        'image'
+      );
+      imageUrl = imgResult.secure_url;
+    }
+
+    if (req.files && req.files.video && req.files.video[0]) {
+      var vidResult = await uploadToCloudinary(
+        req.files.video[0].buffer,
+        'imc/news',
+        'video'
+      );
+      videoUrl = vidResult.secure_url;
+    }
+
+    var news = await News.create({
+      author:      req.user._id,
+      authorName:  'IMC Editorial',
+      authorEmail: req.user.email,
+      title:       title,
+      university:  category || 'General',
+      content:     content,
+      image:       imageUrl,
+      video:       videoUrl,
+      tags:        category ? [category] : [],
+      status:      status,
+      pinned:      req.body.pinned === 'true'
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: status === 'approved'
+        ? 'News published successfully!'
+        : 'News saved as draft.',
+      news: news
+    });
+
+  } catch (err) {
+    console.error('Create news admin error:', err.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Could not create news: ' + err.message
+    });
+  }
+};
+
 module.exports = {
   getAllNews, getAllNewsAdmin, submitNews,
-  updateNewsStatus, deleteNews, getNewsById
+  updateNewsStatus, deleteNews, getNewsById, createNewsAdmin
 };

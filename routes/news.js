@@ -1,5 +1,5 @@
 'use strict';
-
+const { uploadMedia } = require('../middleware/upload');
 const express    = require('express');
 const router     = express.Router();
 const ctrl       = require('../controllers/newsController');
@@ -17,6 +17,18 @@ router.post('/', protect, ctrl.submitNews);
 
 // GET  /api/news
 router.get('/', ctrl.getAllNews);
+
+// POST /api/news/admin/create — admin creates & publishes news with files
+router.post(
+  '/admin/create',
+  protect,
+  adminOnly,
+  uploadMedia.fields([
+    { name: 'image', maxCount: 1 },
+    { name: 'video', maxCount: 1 }
+  ]),
+  ctrl.createNewsAdmin
+);
 
 // =============================================
 // DYNAMIC ROUTES LAST

@@ -27,6 +27,15 @@ const VendorSchema = new mongoose.Schema({
   description:   { type: String, required: true },
   whatsApp:      { type: String, required: true },
   status: {
+profilePicture: {
+      type:    String,
+      default: ''
+    },
+
+    campusLocation: {
+      type:    String,
+      default: ''
+    },
     type:    String,
     enum:    ['pending', 'approved', 'rejected'],
     default: 'pending'
