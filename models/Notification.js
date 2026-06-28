@@ -22,6 +22,24 @@ var NotificationSchema = new mongoose.Schema({
   icon:      { type: String, default: '🔔' }
 }, { timestamps: true });
 
+type: {
+      type:    String,
+      enum:    ['order_lead', 'vendor_approved', 'news_approved', 'withdrawal_update', 'general'],
+      default: 'general'
+    },
+    relatedProductId: {
+      type:    mongoose.Schema.Types.ObjectId,
+      default: null
+    },
+    relatedProductName: {
+      type:    String,
+      default: ''
+    },
+    customerName: {
+      type:    String,
+      default: ''
+    },
+
 // Index for fast queries
 NotificationSchema.index({ recipient: 1, isRead: 1, createdAt: -1 });
 
