@@ -89,10 +89,22 @@ app.get('/api/admin/migrate-test-data', async function (req, res) {
 
       for (var j = 0; j < docs.length; j++) {
         var doc = docs[j];
-        var exists = await mainCol.findOne({ _id: doc._id });
-        if (exists) { skipped++; continue; }
-        await mainCol.insertOne(doc);
-        inserted++;
+
+        var existsById = await mainCol.findOne({ _id: doc._id });
+        if (existsById) { skipped++; continue; }
+
+        if (doc.email) {
+          var existsByEmail = await mainCol.findOne({ email: doc.email });
+          if (existsByEmail) { skipped++; continue; }
+        }
+
+        try {
+          await mainCol.insertOne(doc);
+          inserted++;
+        } catch (insertErr) {
+          console.error('Skipped doc in ' + name + ' due to: ' + insertErr.message);
+          skipped++;
+        }
       }
 
       results.push({ collection: name, foundInTest: docs.length, migrated: inserted, skipped: skipped });
