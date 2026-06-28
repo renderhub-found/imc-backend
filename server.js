@@ -63,6 +63,55 @@ try {
 
 var app  = express();
 app.set('trust proxy', 1);
+app.get('/api/admin/migrate-test-data', async function (req, res) {
+  try {
+    var secret = req.query.secret;
+    if (secret !== 'imc-migrate-2026-temp') {
+      return res.status(403).json({ success: false, message: 'Forbidden.' });
+    }
+
+    var BASE = 'mongodb+srv://imcadmin:cGgrQ9rbsPYJKeWD@cluster0.nylhfah.mongodb.net/';
+    var collectionsToMigrate = ['adminlogs', 'ambassadors', 'ads', 'events', 'users', 'vendors'];
+
+    var testConn = await mongoose.createConnection(BASE + 'test?appName=Cluster0').asPromise();
+    var mainConn = await mongoose.createConnection(BASE + 'imc_db?appName=Cluster0').asPromise();
+
+    var results = [];
+
+    for (var i = 0; i < collectionsToMigrate.length; i++) {
+      var name = collectionsToMigrate[i];
+      var testCol = testConn.db.collection(name);
+      var mainCol = mainConn.db.collection(name);
+      var docs = await testCol.find({}).toArray();
+
+      var inserted = 0;
+      var skipped  = 0;
+
+      for (var j = 0; j < docs.length; j++) {
+        var doc = docs[j];
+        var exists = await mainCol.findOne({ _id: doc._id });
+        if (exists) { skipped++; continue; }
+        await mainCol.insertOne(doc);
+        inserted++;
+      }
+
+      results.push({ collection: name, foundInTest: docs.length, migrated: inserted, skipped: skipped });
+    }
+
+    await testConn.close();
+    await mainConn.close();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Migration complete. Nothing deleted from test.',
+      results: results
+    });
+
+  } catch (err) {
+    console.error('Migration error:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
 var PORT = process.env.PORT || 5000;
 
 // ================================================
@@ -229,56 +278,9 @@ console.log('');
 // ================================================
 //   TEMPORARY: One-time migration test → imc_db
 //   Visit once, then DELETE this route entirely
+//
 // ================================================
-app.get('/api/admin/migrate-test-data', async function (req, res) {
-  try {
-    var secret = req.query.secret;
-    if (secret !== 'imc-migrate-2026-temp') {
-      return res.status(403).json({ success: false, message: 'Forbidden.' });
-    }
 
-    var BASE = 'mongodb+srv://imcadmin:cGgrQ9rbsPYJKeWD@cluster0.nylhfah.mongodb.net/';
-    var collectionsToMigrate = ['adminlogs', 'ambassadors', 'ads', 'events', 'users', 'vendors'];
-
-    var testConn = await mongoose.createConnection(BASE + 'test?appName=Cluster0').asPromise();
-    var mainConn = await mongoose.createConnection(BASE + 'imc_db?appName=Cluster0').asPromise();
-
-    var results = [];
-
-    for (var i = 0; i < collectionsToMigrate.length; i++) {
-      var name = collectionsToMigrate[i];
-      var testCol = testConn.db.collection(name);
-      var mainCol = mainConn.db.collection(name);
-      var docs = await testCol.find({}).toArray();
-
-      var inserted = 0;
-      var skipped  = 0;
-
-      for (var j = 0; j < docs.length; j++) {
-        var doc = docs[j];
-        var exists = await mainCol.findOne({ _id: doc._id });
-        if (exists) { skipped++; continue; }
-        await mainCol.insertOne(doc);
-        inserted++;
-      }
-
-      results.push({ collection: name, foundInTest: docs.length, migrated: inserted, skipped: skipped });
-    }
-
-    await testConn.close();
-    await mainConn.close();
-
-    return res.status(200).json({
-      success: true,
-      message: 'Migration complete. Nothing deleted from test.',
-      results: results
-    });
-
-  } catch (err) {
-    console.error('Migration error:', err.message);
-    return res.status(500).json({ success: false, message: err.message });
-  }
-});
 
 // ================================================
 //   404 HANDLER
