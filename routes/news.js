@@ -13,7 +13,15 @@ const { protect, adminOnly } = require('../middleware/auth');
 router.get('/admin/all', protect, adminOnly, ctrl.getAllNewsAdmin);
 
 // POST /api/news
-router.post('/', protect, ctrl.submitNews);
+router.post(
+  '/',
+  protect,
+  uploadMedia.fields([
+    { name: 'image', maxCount: 1 },
+    { name: 'video', maxCount: 1 }
+  ]),
+  ctrl.submitNews
+);
 
 // GET  /api/news
 router.get('/', ctrl.getAllNews);

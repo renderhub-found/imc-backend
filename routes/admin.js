@@ -103,6 +103,65 @@ router.get('/stats', async function (req, res) {
   }
 });
 
+
+const Event = require('../models/Event');
+const Ticket = require('../models/Ticket');
+const Notification = require('../models/Notification');
+
+// ================================================
+//   ADMIN: GET ALL EVENTS
+//   GET /api/admin/events
+// ================================================
+
+const getAllEventsAdmin = async function (req, res) {
+  try {
+    var events = await Event.find({}).sort({ createdAt: -1 }).lean();
+
+    var eventsWithStats = await Promise.all(events.map(async function (e) {
+      var ticketCount = await Ticket.countDocuments({ event: e._id });
+      return {
+        _id:           e._id,
+        title:         e.title,
+        organizerName: e.organizer ? e.organizer.toString() : '—',
+        eventDate:     e.eventDate,
+        status:        e.status || 'active',
+        eventType:     e.eventType,
+        ticketsSold:   ticketCount,
+        university:    e.university
+      };
+    }));
+
+    return res.status(200).json({ success: true, events: eventsWithStats });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ================================================
+//   ADMIN: GET ALL NOTIFICATIONS
+//   GET /api/admin/notifications
+// ================================================
+
+const getAllNotificationsAdmin = async function (req, res) {
+  try {
+    var notifications = await Notification.find({})
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .lean();
+
+    var unreadCount = await Notification.countDocuments({ read: false });
+
+    return res.status(200).json({
+      success: true,
+      notifications: notifications,
+      totalCount: notifications.length,
+      unreadCount: unreadCount
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // ================================================
 //   USERS
 // ================================================
@@ -740,3 +799,5 @@ router.get('/test-email', async function (req, res) {
 });
 
 module.exports = router;
+router.get('/events', adminProtect, ctrl.getAllEventsAdmin);
+router.get('/notifications', adminProtect, ctrl.getAllNotificationsAdmin);

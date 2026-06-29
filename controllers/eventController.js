@@ -324,6 +324,39 @@ async function purchaseTicket(req, res) {
 //   GET MY TICKETS — Protected
 // ================================================
 
+var ticketCode = 'IMC-TKT-' + crypto.randomBytes(6).toString('hex').toUpperCase();
+
+    var qrPayload = JSON.stringify({
+      ticketCode: ticketCode,
+      eventId:    event._id.toString()
+    });
+
+    var qrImage = await QRCode.toDataURL(qrPayload);
+
+    var ticket = await Ticket.create({
+      event:        event._id,
+      user:         req.user._id,
+      ticketTypeId: req.params.ticketTypeId,
+      buyerName:    req.user.firstName + ' ' + (req.user.lastName || ''),
+      buyerEmail:   req.user.email,
+      ticketCode:   ticketCode,
+      qrData:       qrImage,
+      status:       'valid',
+      paymentRef:   req.body.paymentRef || ''
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Ticket purchased successfully!',
+      ticket: {
+        ticketCode: ticket.ticketCode,
+        qrData:     ticket.qrData,
+        eventTitle: event.title,
+        ticketType: req.body.ticketTypeName || 'General',
+        buyerName:  ticket.buyerName
+      }
+    });
+
 async function getMyTickets(req, res) {
   try {
     var events = await Event.find({
@@ -489,6 +522,54 @@ async function addTicketType(req, res) {
   }
 }
 
+// ================================================
+//   VERIFY / CHECK-IN TICKET
+//   POST /api/events/:id/verify-ticket
+//   Protected — event organizer only
+// ================================================
+
+const verifyTicket = async function (req, res) {
+  try {
+    var ticketCode = (req.body.ticketCode || '').trim().toUpperCase();
+
+    if (!ticketCode) {
+      return res.status(400).json({ success: false, message: 'Ticket code required.' });
+    }
+
+    var ticket = await Ticket.findOne({ ticketCode: ticketCode, event: req.params.id });
+
+    if (!ticket) {
+      return res.status(404).json({ success: false, status: 'invalid', message: 'Ticket not found for this event.' });
+    }
+
+    if (ticket.status === 'used') {
+      return res.status(200).json({
+        success: true,
+        status:  'used',
+        message: 'This ticket was already checked in.',
+        checkedInAt: ticket.checkedInAt,
+        buyerName: ticket.buyerName
+      });
+    }
+
+    ticket.status       = 'used';
+    ticket.checkedInAt  = new Date();
+    ticket.checkedInBy  = req.user._id;
+    await ticket.save();
+
+    return res.status(200).json({
+      success: true,
+      status:  'valid',
+      message: 'Ticket verified! Welcome ' + ticket.buyerName + '.',
+      buyerName: ticket.buyerName
+    });
+
+  } catch (err) {
+    console.error('Verify ticket error:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   getAllEvents,
   getEventById,
@@ -500,5 +581,6 @@ module.exports = {
   getMyTickets,
   getEventAnalytics,
   requestWithdrawal,
-  addTicketType
+  addTicketType,
+  verifyTicket,
 };

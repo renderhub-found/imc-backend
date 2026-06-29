@@ -160,19 +160,21 @@ async function getMyProfile(req, res) {
 //   GET ALL AMBASSADORS — Admin
 //   GET /api/ambassadors
 // ================================================
-
-async function getAllAmbassadors(req, res) {
+const getMyWithdrawals = async function (req, res) {
   try {
-    var ambassadors = await Ambassador.find().sort({ createdAt: -1 });
-    return res.json({
-      success:     true,
-      count:       ambassadors.length,
-      ambassadors: ambassadors
+    var ambassador = await Ambassador.findOne({ user: req.user._id });
+    if (!ambassador) {
+      return res.status(404).json({ success: false, message: 'Ambassador profile not found.' });
+    }
+    return res.status(200).json({
+      success: true,
+      earnings: ambassador.earnings || 0,
+      withdrawals: ambassador.withdrawals || []
     });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }
-}
+};
 
 // ================================================
 //   REQUEST WITHDRAWAL

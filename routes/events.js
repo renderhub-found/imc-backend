@@ -14,7 +14,7 @@ router.get('/', ctrl.getAllEvents);
 router.get('/my-events',   protect, ctrl.getMyEvents);
 router.get('/my-tickets',  protect, ctrl.getMyTickets);
 router.post('/',           protect, ctrl.createEvent);
-
+router.post('/:id/verify-ticket', protect, eventController.verifyTicket);
 // ---- Dynamic /:id routes ----
 router.get('/:id',                  ctrl.getEventById);
 router.put('/:id',           protect, ctrl.updateEvent);

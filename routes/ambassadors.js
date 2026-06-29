@@ -23,9 +23,9 @@ required.forEach(function (fn) {
 // Static routes FIRST — before any /:id
 router.get('/my-profile',  protect,              ctrl.getMyProfile);
 router.post('/register',   protect,              ctrl.registerAmbassador);
-router.post('/withdraw',   protect,              ctrl.requestWithdrawal);
 router.post('/claim-task', protect,              ctrl.claimTaskReward);
 router.get('/',            protect, adminOnly,   ctrl.getAllAmbassadors);
+router.get('/my-withdrawals', protect, ctrl.getMyWithdrawals);
 
 console.log('[Ambassador Routes] ✅ All routes registered');
 

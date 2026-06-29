@@ -1,7 +1,7 @@
 // ================================================
 //   NEWS CONTROLLER
 // ================================================
-
+const { uploadToCloudinary } = require('../middleware/upload');
 const News = require('../models/News');
 
 // GET /api/news
@@ -52,8 +52,18 @@ const submitNews = async function (req, res) {
     var title      = (req.body.title      || '').trim();
     var university = (req.body.university || '').trim();
     var content    = (req.body.content    || '').trim();
-    var image      = (req.body.image      || '').trim();
-    var video      = (req.body.video      || '').trim();
+    var imageUrl = '';
+    var videoUrl = '';
+
+    if (req.files && req.files.image && req.files.image[0]) {
+      var imgResult = await uploadToCloudinary(req.files.image[0].buffer, 'imc/news', 'image');
+      imageUrl = imgResult.secure_url;
+    }
+
+    if (req.files && req.files.video && req.files.video[0]) {
+      var vidResult = await uploadToCloudinary(req.files.video[0].buffer, 'imc/news', 'video');
+      videoUrl = vidResult.secure_url;
+    }
 
     if (!title || !university || !content) {
       return res.status(400).json({
