@@ -1,5 +1,5 @@
 'use strict';
-const { uploadMedia } = require('../middleware/upload');
+const { uploadImage, uploadMedia } = require('../middleware/upload');
 const express    = require('express');
 const router     = express.Router();
 const ctrl       = require('../controllers/newsController');
@@ -54,7 +54,7 @@ router.get('/:id', ctrl.getNewsById);
 var uploadMw = require('../middleware/upload');
 
 // POST /api/news/upload-image
-router.post('/upload-image', protect, uploadMw.single('image', 'imc/news'),
+router.post('/some-route', protect, uploadImage.single('image'), ctrl.someFunction),
   function (req, res) {
     if (!req.cloudinaryUrl) {
       return res.status(400).json({ success: false, message: 'No image uploaded.' });
@@ -63,6 +63,5 @@ router.post('/upload-image', protect, uploadMw.single('image', 'imc/news'),
       success: true, imageUrl: req.cloudinaryUrl, publicId: req.cloudinaryPublicId
     });
   }
-);
 
 module.exports = router;

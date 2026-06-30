@@ -26,7 +26,7 @@ router.post('/register',   protect,              ctrl.registerAmbassador);
 router.post('/claim-task', protect,              ctrl.claimTaskReward);
 router.get('/',            protect, adminOnly,   ctrl.getAllAmbassadors);
 router.get('/my-withdrawals', protect, ctrl.getMyWithdrawals);
-
+router.get('/all', protect, adminProtect, ctrl.getAllAmbassadors);
 console.log('[Ambassador Routes] ✅ All routes registered');
 
 module.exports = router;

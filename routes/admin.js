@@ -103,7 +103,7 @@ router.get('/stats', async function (req, res) {
   }
 });
 
-
+const adminController = require('../controllers/adminController');
 const Event = require('../models/Event');
 const Ticket = require('../models/Ticket');
 const Notification = require('../models/Notification');
@@ -799,5 +799,5 @@ router.get('/test-email', async function (req, res) {
 });
 
 module.exports = router;
-router.get('/events', adminProtect, ctrl.getAllEventsAdmin);
-router.get('/notifications', adminProtect, ctrl.getAllNotificationsAdmin);
+router.get('/events', adminProtect, adminController.getAllEventsAdmin);
+router.get('/notifications', adminProtect, adminController.getAllNotificationsAdmin);
