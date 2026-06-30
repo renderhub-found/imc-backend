@@ -230,7 +230,7 @@ async function deleteEvent(req, res) {
 //   PURCHASE TICKET — Protected
 // ================================================
 
-async function purchaseTicket(req, res) {
+const purchaseTicket = async function (req, res) {
   try {
     var event = await Event.findById(req.params.id);
     if (!event) {

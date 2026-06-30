@@ -295,6 +295,16 @@ async function claimTaskReward(req, res) {
     return res.status(500).json({ success: false, message: err.message });
   }
 }
+console.log('[ambassadorController] Exports ready:', Object.keys(module.exports));
+
+const getAllAmbassadors = async function (req, res) {
+  try {
+    var ambassadors = await Ambassador.find({}).sort({ createdAt: -1 });
+    return res.status(200).json({ success: true, ambassadors: ambassadors });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
 
 module.exports = {
   registerAmbassador: registerAmbassador,
@@ -303,5 +313,3 @@ module.exports = {
   requestWithdrawal:  requestWithdrawal,
   claimTaskReward:    claimTaskReward
 };
-
-console.log('[ambassadorController] Exports ready:', Object.keys(module.exports));

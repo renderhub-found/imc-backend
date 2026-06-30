@@ -469,14 +469,13 @@ const logProductLead = async function (req, res) {
 
 
 module.exports = {
-  getAllVendors:       getAllVendors,
-  getAllProducts:      getAllProducts,
-  getMyVendorProfile: getMyVendorProfile,
-  registerVendor:     registerVendor,
-  addProduct:         addProduct,
-  deleteProduct:      deleteProduct,
-  getVendorById:      getVendorById,
-  updateVendorProfile: updateVendorProfile,
-  uploadProfilePicture: uploadProfilePicture
-  logProductLead:     logProductLead,
+  getAllVendors,
+  getMyVendorProfile,
+  getAllProducts,
+  registerVendor,
+  addProduct,
+  deleteProduct,
+  getVendorById,
+  uploadProfilePicture,
+  logProductLead
 };

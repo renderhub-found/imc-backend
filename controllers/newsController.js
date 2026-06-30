@@ -141,7 +141,6 @@ const getNewsById = async function (req, res) {
   }
 };
 
-const { uploadToCloudinary } = require('../middleware/upload');
 
 // ================================================
 //   ADMIN: CREATE & PUBLISH NEWS DIRECTLY
