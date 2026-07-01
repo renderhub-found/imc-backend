@@ -103,7 +103,6 @@ router.get('/stats', async function (req, res) {
   }
 });
 
-const adminController = require('../controllers/adminController');
 const Event = require('../models/Event');
 const Ticket = require('../models/Ticket');
 const Notification = require('../models/Notification');

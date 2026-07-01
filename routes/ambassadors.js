@@ -1,5 +1,7 @@
 'use strict';
 
+const { protect } = require('../middleware/auth');
+const { adminProtect } = require('../middleware/adminAuth');
 var express  = require('express');
 var router   = express.Router();
 var ctrl     = require('../controllers/ambassadorController');
@@ -27,6 +29,7 @@ router.post('/claim-task', protect,              ctrl.claimTaskReward);
 router.get('/',            protect, adminOnly,   ctrl.getAllAmbassadors);
 router.get('/my-withdrawals', protect, ctrl.getMyWithdrawals);
 router.get('/all', protect, adminProtect, ctrl.getAllAmbassadors);
+
 console.log('[Ambassador Routes] ✅ All routes registered');
 
 module.exports = router;
