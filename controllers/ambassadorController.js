@@ -5,23 +5,13 @@ var User       = require('../models/User');
 
 console.log('[ambassadorController] Loaded');
 
-// ================================================
-//   REGISTER AMBASSADOR
-//   POST /api/ambassadors/register
-// ================================================
-
 async function registerAmbassador(req, res) {
   try {
     console.log('[Ambassador] registerAmbassador called');
-    console.log('[Ambassador] user:', req.user.email, '| id:', req.user._id);
-    console.log('[Ambassador] body:', JSON.stringify(req.body));
-
     var userId = req.user._id;
 
-    // Check if THIS USER already has an ambassador record
     var existingByUser = await Ambassador.findOne({ user: userId });
     if (existingByUser) {
-      console.log('[Ambassador] Already registered as ambassador:', existingByUser.username);
       return res.status(200).json({
         success:    true,
         message:    'You are already registered as an ambassador.',
@@ -36,7 +26,6 @@ async function registerAmbassador(req, res) {
     var social     = (req.body.social     || '').trim();
     var reason     = (req.body.reason     || '').trim();
 
-    // Validate required fields
     var missing = [];
     if (!fullName)   missing.push('fullName');
     if (!university) missing.push('university');
@@ -44,37 +33,28 @@ async function registerAmbassador(req, res) {
     if (!whatsApp)   missing.push('whatsApp');
 
     if (missing.length > 0) {
-      console.log('[Ambassador] Missing fields:', missing);
       return res.status(400).json({
         success: false,
         message: 'Missing required fields: ' + missing.join(', ')
       });
     }
 
-    // Check username is unique
     var usernameTaken = await Ambassador.findOne({ username: username });
     if (usernameTaken) {
-      console.log('[Ambassador] Username taken:', username);
       return res.status(400).json({
         success: false,
-        message: 'Username "' + username + '" is already taken. Please choose another.'
+        message: 'Username "' + username + '" is already taken.'
       });
     }
 
-    var refCode = 'AMB-' + username.toUpperCase();
-
-    // Check refCode unique
+    var refCode  = 'AMB-' + username.toUpperCase();
     var refTaken = await Ambassador.findOne({ refCode: refCode });
     if (refTaken) {
-      console.log('[Ambassador] RefCode taken:', refCode);
       return res.status(400).json({
         success: false,
-        message: 'Username "' + username + '" is already taken. Please choose another.'
+        message: 'Username "' + username + '" is already taken.'
       });
     }
-
-    console.log('[Ambassador] Creating document...');
-    console.log('[Ambassador] refCode will be:', refCode);
 
     var ambassador = await Ambassador.create({
       user:        userId,
@@ -93,12 +73,7 @@ async function registerAmbassador(req, res) {
       status:      'active'
     });
 
-    console.log('[Ambassador] ✅ CREATED! ID:', ambassador._id);
-    console.log('[Ambassador] refCode:', ambassador.refCode);
-
-    // Update user role
     await User.findByIdAndUpdate(userId, { role: 'ambassador' });
-    console.log('[Ambassador] User role → ambassador');
 
     return res.status(201).json({
       success:    true,
@@ -108,16 +83,13 @@ async function registerAmbassador(req, res) {
 
   } catch (err) {
     console.error('[Ambassador] registerAmbassador ERROR:', err.message);
-    console.error('[Ambassador] stack:', err.stack);
-
     if (err.code === 11000) {
       var field = Object.keys(err.keyValue || {})[0] || 'field';
       return res.status(400).json({
         success: false,
-        message: 'That ' + field + ' is already taken. Please choose another.'
+        message: 'That ' + field + ' is already taken.'
       });
     }
-
     return res.status(500).json({
       success: false,
       message: 'Registration failed: ' + err.message
@@ -125,72 +97,48 @@ async function registerAmbassador(req, res) {
   }
 }
 
-// ================================================
-//   GET MY PROFILE
-//   GET /api/ambassadors/my-profile
-// ================================================
-
 async function getMyProfile(req, res) {
   try {
-    console.log('[Ambassador] getMyProfile — user:', req.user.email);
-
     var ambassador = await Ambassador.findOne({ user: req.user._id });
-
     if (!ambassador) {
-      return res.json({
-        success:      true,
-        isAmbassador: false,
-        ambassador:   null
-      });
+      return res.json({ success: true, isAmbassador: false, ambassador: null });
     }
-
-    return res.json({
-      success:      true,
-      isAmbassador: true,
-      ambassador:   ambassador
-    });
-
+    return res.json({ success: true, isAmbassador: true, ambassador: ambassador });
   } catch (err) {
-    console.error('[Ambassador] getMyProfile error:', err.message);
     return res.status(500).json({ success: false, message: err.message });
   }
 }
 
-// ================================================
-//   GET ALL AMBASSADORS — Admin
-//   GET /api/ambassadors
-// ================================================
-const getMyWithdrawals = async function (req, res) {
+async function getAllAmbassadors(req, res) {
+  try {
+    var ambassadors = await Ambassador.find({}).sort({ createdAt: -1 });
+    return res.status(200).json({ success: true, ambassadors: ambassadors });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+async function getMyWithdrawals(req, res) {
   try {
     var ambassador = await Ambassador.findOne({ user: req.user._id });
     if (!ambassador) {
       return res.status(404).json({ success: false, message: 'Ambassador profile not found.' });
     }
     return res.status(200).json({
-      success: true,
-      earnings: ambassador.earnings || 0,
+      success:     true,
+      earnings:    ambassador.earnings || 0,
       withdrawals: ambassador.withdrawals || []
     });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }
-};
-
-// ================================================
-//   REQUEST WITHDRAWAL
-//   POST /api/ambassadors/withdraw
-// ================================================
+}
 
 async function requestWithdrawal(req, res) {
   try {
-    console.log('[Ambassador] requestWithdrawal — user:', req.user.email);
-
     var ambassador = await Ambassador.findOne({ user: req.user._id });
     if (!ambassador) {
-      return res.status(404).json({
-        success: false,
-        message: 'Ambassador profile not found.'
-      });
+      return res.status(404).json({ success: false, message: 'Ambassador profile not found.' });
     }
 
     var accountName = (req.body.accountName || '').trim();
@@ -205,16 +153,12 @@ async function requestWithdrawal(req, res) {
       });
     }
     if (amount < 500) {
-      return res.status(400).json({
-        success: false,
-        message: 'Minimum withdrawal is ₦500.'
-      });
+      return res.status(400).json({ success: false, message: 'Minimum withdrawal is ₦500.' });
     }
     if (amount > ambassador.earnings) {
       return res.status(400).json({
         success: false,
-        message: 'Amount exceeds your available balance of ₦' +
-                 ambassador.earnings.toLocaleString()
+        message: 'Amount exceeds your available balance of ₦' + ambassador.earnings.toLocaleString()
       });
     }
 
@@ -228,22 +172,6 @@ async function requestWithdrawal(req, res) {
 
     await ambassador.save();
 
-    // Send ambassador welcome email (non-blocking)
-try {
-  var emailService = require('../utils/emailService');
-  emailService.sendAmbassadorConfirmation(
-    req.user.email,
-    fullName,
-    refCode
-  ).then(function (r) {
-    console.log('[Ambassador] Confirmation email:', r.success ? 'sent' : 'failed');
-  });
-} catch (e) {
-  console.log('[Ambassador] Email error:', e.message);
-}
-
-    console.log('[Ambassador] ✅ Withdrawal request saved');
-
     return res.status(201).json({
       success: true,
       message: 'Withdrawal request submitted! We will process within 48 hours.'
@@ -254,11 +182,6 @@ try {
     return res.status(500).json({ success: false, message: err.message });
   }
 }
-
-// ================================================
-//   CLAIM TASK REWARD
-//   POST /api/ambassadors/claim-task
-// ================================================
 
 async function claimTaskReward(req, res) {
   try {
@@ -281,8 +204,6 @@ async function claimTaskReward(req, res) {
     ambassador.earnings += reward;
     await ambassador.save();
 
-    console.log('[Ambassador] Task claimed:', taskId, '| reward: ₦' + reward);
-
     return res.json({
       success:   true,
       message:   '₦' + reward.toLocaleString() + ' reward claimed!',
@@ -291,25 +212,17 @@ async function claimTaskReward(req, res) {
     });
 
   } catch (err) {
-    console.error('[Ambassador] claimTaskReward error:', err.message);
     return res.status(500).json({ success: false, message: err.message });
   }
 }
-console.log('[ambassadorController] Exports ready:', Object.keys(module.exports));
 
-const getAllAmbassadors = async function (req, res) {
-  try {
-    var ambassadors = await Ambassador.find({}).sort({ createdAt: -1 });
-    return res.status(200).json({ success: true, ambassadors: ambassadors });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: err.message });
-  }
-};
+console.log('[ambassadorController] Exports ready:', ['registerAmbassador','getMyProfile','getAllAmbassadors','requestWithdrawal','claimTaskReward','getMyWithdrawals']);
 
 module.exports = {
   registerAmbassador: registerAmbassador,
   getMyProfile:       getMyProfile,
   getAllAmbassadors:   getAllAmbassadors,
   requestWithdrawal:  requestWithdrawal,
-  claimTaskReward:    claimTaskReward
+  claimTaskReward:    claimTaskReward,
+  getMyWithdrawals:   getMyWithdrawals
 };

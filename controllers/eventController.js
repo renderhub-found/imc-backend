@@ -1,6 +1,9 @@
 'use strict';
+
 const { uploadToCloudinary } = require('../middleware/upload');
 var Event  = require('../models/Event');
+var Ticket = require('../models/Ticket');
+var QRCode = require('qrcode');
 var crypto = require('crypto');
 
 // ================================================
@@ -11,8 +14,8 @@ async function getAllEvents(req, res) {
   try {
     var filter = { status: { $ne: 'cancelled' } };
 
-    if (req.query.type === 'free')   filter.eventType = 'free';
-    if (req.query.type === 'paid')   filter.eventType = 'paid';
+    if (req.query.type === 'free') filter.eventType = 'free';
+    if (req.query.type === 'paid') filter.eventType = 'paid';
 
     if (req.query.when === 'upcoming') {
       filter.eventDate = { $gte: new Date() };
@@ -67,10 +70,9 @@ async function getMyEvents(req, res) {
       .sort({ createdAt: -1 });
 
     var eventsWithStats = events.map(function (ev) {
-      var obj           = ev.toObject({ virtuals: true });
-      obj.ticketsSold   = ev.purchases.length;
-      obj.grossRevenue  = ev.purchases.reduce(function (s, p) { return s + (p.amountPaid||0); }, 0);
-      // Remove full purchase list from summary
+      var obj          = ev.toObject({ virtuals: true });
+      obj.ticketsSold  = ev.purchases.length;
+      obj.grossRevenue = ev.purchases.reduce(function (s, p) { return s + (p.amountPaid || 0); }, 0);
       delete obj.purchases;
       return obj;
     });
@@ -88,7 +90,6 @@ async function getMyEvents(req, res) {
 async function createEvent(req, res) {
   try {
     console.log('[Event] createEvent — user:', req.user.email);
-    console.log('[Event] body:', JSON.stringify(req.body));
 
     var title       = (req.body.title       || '').trim();
     var description = (req.body.description || '').trim();
@@ -98,28 +99,20 @@ async function createEvent(req, res) {
     var eventTime   = (req.body.eventTime   || '').trim();
     var contactInfo = (req.body.contactInfo || '').trim();
     var eventType   = req.body.eventType === 'paid' ? 'paid' : 'free';
+
     var coverImage = '';
     if (req.file) {
-      var coverRes = await uploadToCloudinary(
-        req.file.buffer, 'imc/events', 'image'
-      );
+      var coverRes = await uploadToCloudinary(req.file.buffer, 'imc/events', 'image');
       coverImage = coverRes.secure_url;
     }
 
-    router.post(
-  '/',
-  protect,
-  uploadImage.single('coverImage'),
-  eventController.createEvent
-);
-
     var missing = [];
-    if (!title)      missing.push('title');
-    if (!description)missing.push('description');
-    if (!university) missing.push('university');
-    if (!location)   missing.push('location');
-    if (!eventDate)  missing.push('eventDate');
-    if (!eventTime)  missing.push('eventTime');
+    if (!title)       missing.push('title');
+    if (!description) missing.push('description');
+    if (!university)  missing.push('university');
+    if (!location)    missing.push('location');
+    if (!eventDate)   missing.push('eventDate');
+    if (!eventTime)   missing.push('eventTime');
 
     if (missing.length > 0) {
       return res.status(400).json({
@@ -128,7 +121,6 @@ async function createEvent(req, res) {
       });
     }
 
-    // Build ticket types if provided
     var ticketTypes = [];
     if (req.body.ticketTypes && Array.isArray(req.body.ticketTypes)) {
       ticketTypes = req.body.ticketTypes.map(function (t) {
@@ -144,7 +136,6 @@ async function createEvent(req, res) {
       });
     }
 
-    // If paid event and no ticket types provided, add default
     if (eventType === 'paid' && ticketTypes.length === 0) {
       var defaultPrice = parseFloat(req.body.ticketPrice) || 0;
       var defaultQty   = parseInt(req.body.ticketQuantity) || 100;
@@ -182,7 +173,7 @@ async function createEvent(req, res) {
 }
 
 // ================================================
-//   UPDATE EVENT — Protected (organizer only)
+//   UPDATE EVENT — Protected
 // ================================================
 
 async function updateEvent(req, res) {
@@ -208,7 +199,7 @@ async function updateEvent(req, res) {
 }
 
 // ================================================
-//   DELETE EVENT — Protected (organizer only)
+//   DELETE EVENT — Protected
 // ================================================
 
 async function deleteEvent(req, res) {
@@ -230,7 +221,7 @@ async function deleteEvent(req, res) {
 //   PURCHASE TICKET — Protected
 // ================================================
 
-const purchaseTicket = async function (req, res) {
+async function purchaseTicket(req, res) {
   try {
     var event = await Event.findById(req.params.id);
     if (!event) {
@@ -248,7 +239,6 @@ const purchaseTicket = async function (req, res) {
       return res.status(400).json({ success: false, message: 'Tickets sold out.' });
     }
 
-    // Check already bought
     var alreadyBought = event.purchases.find(function (p) {
       return p.buyerEmail === req.user.email &&
              p.ticketTypeId.toString() === ticketTypeId;
@@ -271,16 +261,13 @@ const purchaseTicket = async function (req, res) {
       });
     }
 
-    // Generate unique ticket code
     var ticketCode = 'IMC-EVT-' + crypto.randomBytes(6).toString('hex').toUpperCase();
 
-    // Calculate commission
     var commission  = event.commission || 10;
     var amountPaid  = ticketType.price;
     var platformCut = Math.round(amountPaid * commission / 100);
     var creatorEarn = amountPaid - platformCut;
 
-    // Add purchase
     event.purchases.push({
       buyer:          req.user._id,
       buyerEmail:     req.user.email,
@@ -292,10 +279,8 @@ const purchaseTicket = async function (req, res) {
       amountPaid:     amountPaid
     });
 
-    // Reduce remaining
     ticketType.remaining = Math.max(0, ticketType.remaining - 1);
 
-    // Credit creator wallet
     if (creatorEarn > 0) {
       if (!event.wallet) event.wallet = { balance: 0, totalEarned: 0 };
       event.wallet.balance     = (event.wallet.balance     || 0) + creatorEarn;
@@ -304,15 +289,35 @@ const purchaseTicket = async function (req, res) {
 
     await event.save();
 
+    // Generate QR code
+    var qrPayload = JSON.stringify({ ticketCode: ticketCode, eventId: event._id.toString() });
+    var qrImage   = await QRCode.toDataURL(qrPayload);
+
+    // Save Ticket document
+    var ticket = await Ticket.create({
+      event:        event._id,
+      user:         req.user._id,
+      ticketTypeId: ticketTypeId,
+      buyerName:    (req.user.firstName || '') + ' ' + (req.user.lastName || ''),
+      buyerEmail:   req.user.email,
+      ticketCode:   ticketCode,
+      qrData:       qrImage,
+      status:       'valid',
+      paymentRef:   paymentRef
+    });
+
     console.log('[Ticket] ✅ Purchased:', ticketCode, '| buyer:', req.user.email);
 
     return res.json({
-      success:        true,
-      message:        'Ticket purchased successfully!',
-      ticketCode:     ticketCode,
-      ticketType:     ticketType.name,
-      amountPaid:     amountPaid,
-      event:          event.title
+      success: true,
+      message: 'Ticket purchased successfully!',
+      ticket: {
+        ticketCode: ticket.ticketCode,
+        qrData:     ticket.qrData,
+        eventTitle: event.title,
+        ticketType: ticketType.name,
+        buyerName:  ticket.buyerName
+      }
     });
   } catch (err) {
     console.error('[Ticket] Purchase error:', err.message);
@@ -323,39 +328,6 @@ const purchaseTicket = async function (req, res) {
 // ================================================
 //   GET MY TICKETS — Protected
 // ================================================
-
-var ticketCode = 'IMC-TKT-' + crypto.randomBytes(6).toString('hex').toUpperCase();
-
-    var qrPayload = JSON.stringify({
-      ticketCode: ticketCode,
-      eventId:    event._id.toString()
-    });
-
-    var qrImage = await QRCode.toDataURL(qrPayload);
-
-    var ticket = await Ticket.create({
-      event:        event._id,
-      user:         req.user._id,
-      ticketTypeId: req.params.ticketTypeId,
-      buyerName:    req.user.firstName + ' ' + (req.user.lastName || ''),
-      buyerEmail:   req.user.email,
-      ticketCode:   ticketCode,
-      qrData:       qrImage,
-      status:       'valid',
-      paymentRef:   req.body.paymentRef || ''
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: 'Ticket purchased successfully!',
-      ticket: {
-        ticketCode: ticket.ticketCode,
-        qrData:     ticket.qrData,
-        eventTitle: event.title,
-        ticketType: req.body.ticketTypeName || 'General',
-        buyerName:  ticket.buyerName
-      }
-    });
 
 async function getMyTickets(req, res) {
   try {
@@ -389,15 +361,12 @@ async function getMyTickets(req, res) {
 }
 
 // ================================================
-//   GET EVENT ANALYTICS — Protected (organizer)
+//   GET EVENT ANALYTICS — Protected
 // ================================================
 
 async function getEventAnalytics(req, res) {
   try {
-    var event = await Event.findOne({
-      _id: req.params.id, organizer: req.user._id
-    });
-
+    var event = await Event.findOne({ _id: req.params.id, organizer: req.user._id });
     if (!event) {
       return res.status(404).json({ success: false, message: 'Event not found.' });
     }
@@ -414,23 +383,23 @@ async function getEventAnalytics(req, res) {
     });
 
     return res.json({
-      success:    true,
+      success:   true,
       analytics: {
         eventTitle:    event.title,
         totalSold:     event.purchases.length,
-        grossRevenue:  event.purchases.reduce(function (s, p) { return s + (p.amountPaid||0); }, 0),
+        grossRevenue:  event.purchases.reduce(function (s, p) { return s + (p.amountPaid || 0); }, 0),
         walletBalance: event.wallet ? (event.wallet.balance || 0) : 0,
         totalEarned:   event.wallet ? (event.wallet.totalEarned || 0) : 0,
         views:         event.views || 0,
         ticketBreakdown: ticketBreakdown,
         attendees:     event.purchases.map(function (p) {
           return {
-            name:      p.buyerName,
-            email:     p.buyerEmail,
-            ticket:    p.ticketTypeName,
-            code:      p.ticketCode,
-            paidAt:    p.purchasedAt,
-            amount:    p.amountPaid
+            name:    p.buyerName,
+            email:   p.buyerEmail,
+            ticket:  p.ticketTypeName,
+            code:    p.ticketCode,
+            paidAt:  p.purchasedAt,
+            amount:  p.amountPaid
           };
         })
       }
@@ -474,10 +443,7 @@ async function requestWithdrawal(req, res) {
 
     if (!event.wallet) event.wallet = { balance: 0, totalEarned: 0, withdrawals: [] };
 
-    event.wallet.withdrawals.push({
-      amount, bankName, accountName, accountNum, status: 'pending'
-    });
-
+    event.wallet.withdrawals.push({ amount, bankName, accountName, accountNum, status: 'pending' });
     event.wallet.balance = balance - amount;
     await event.save();
 
@@ -488,7 +454,7 @@ async function requestWithdrawal(req, res) {
 }
 
 // ================================================
-//   ADD TICKET TYPE — Protected (organizer)
+//   ADD TICKET TYPE — Protected
 // ================================================
 
 async function addTicketType(req, res) {
@@ -504,9 +470,7 @@ async function addTicketType(req, res) {
     var description = (req.body.description || '').trim();
 
     if (!name || quantity < 1) {
-      return res.status(400).json({
-        success: false, message: 'Ticket name and quantity required.'
-      });
+      return res.status(400).json({ success: false, message: 'Ticket name and quantity required.' });
     }
 
     event.ticketTypes.push({
@@ -523,12 +487,10 @@ async function addTicketType(req, res) {
 }
 
 // ================================================
-//   VERIFY / CHECK-IN TICKET
-//   POST /api/events/:id/verify-ticket
-//   Protected — event organizer only
+//   VERIFY TICKET — Protected
 // ================================================
 
-const verifyTicket = async function (req, res) {
+async function verifyTicket(req, res) {
   try {
     var ticketCode = (req.body.ticketCode || '').trim().toUpperCase();
 
@@ -544,23 +506,23 @@ const verifyTicket = async function (req, res) {
 
     if (ticket.status === 'used') {
       return res.status(200).json({
-        success: true,
-        status:  'used',
-        message: 'This ticket was already checked in.',
+        success:     true,
+        status:      'used',
+        message:     'This ticket was already checked in.',
         checkedInAt: ticket.checkedInAt,
-        buyerName: ticket.buyerName
+        buyerName:   ticket.buyerName
       });
     }
 
-    ticket.status       = 'used';
-    ticket.checkedInAt  = new Date();
-    ticket.checkedInBy  = req.user._id;
+    ticket.status      = 'used';
+    ticket.checkedInAt = new Date();
+    ticket.checkedInBy = req.user._id;
     await ticket.save();
 
     return res.status(200).json({
-      success: true,
-      status:  'valid',
-      message: 'Ticket verified! Welcome ' + ticket.buyerName + '.',
+      success:   true,
+      status:    'valid',
+      message:   'Ticket verified! Welcome ' + ticket.buyerName + '.',
       buyerName: ticket.buyerName
     });
 
@@ -568,7 +530,7 @@ const verifyTicket = async function (req, res) {
     console.error('Verify ticket error:', err.message);
     return res.status(500).json({ success: false, message: err.message });
   }
-};
+}
 
 module.exports = {
   getAllEvents,
@@ -582,5 +544,5 @@ module.exports = {
   getEventAnalytics,
   requestWithdrawal,
   addTicketType,
-  verifyTicket,
+  verifyTicket
 };

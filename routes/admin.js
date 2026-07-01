@@ -798,6 +798,7 @@ router.get('/test-email', async function (req, res) {
   }
 });
 
+router.get('/events', getAllEventsAdmin);
+router.get('/notifications', getAllNotificationsAdmin);
+
 module.exports = router;
-router.get('/events', adminProtect, adminController.getAllEventsAdmin);
-router.get('/notifications', adminProtect, adminController.getAllNotificationsAdmin);
