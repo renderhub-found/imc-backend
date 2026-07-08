@@ -6,6 +6,7 @@ var mongoose     = require('mongoose');
 var rateLimit    = require('express-rate-limit');
 
 var { adminProtect, auditLog } = require('../middleware/adminAuth');
+var { uploadImage, uploadToCloudinary } = require('../middleware/upload');
 
 var User       = require('../models/User');
 var Vendor     = require('../models/Vendor');
@@ -480,7 +481,7 @@ router.get('/courses', async function (req, res) {
   }
 });
 
-router.post('/courses', async function (req, res) {
+router.post('/courses', uploadImage.single('image'), async function (req, res) {
   try {
     if (!Course_model) return res.status(404).json({ success: false, message: 'Course model not loaded.' });
 
@@ -497,11 +498,17 @@ router.post('/courses', async function (req, res) {
       });
     }
 
+    var image = '';
+    if (req.file) {
+      var imgRes = await uploadToCloudinary(req.file.buffer, 'imc/courses', 'image');
+      image = imgRes.secure_url;
+    }
+
     var course = await Course_model.create({
       title, category, description, price,
       isFree:     price === 0,
       fileUrl,
-      image:      req.body.image      || '',
+      image:      image,
       duration:   req.body.duration   || '2 hours',
       lessons:    parseInt(req.body.lessons) || 10,
       level:      req.body.level      || 'Beginner',
@@ -516,17 +523,24 @@ router.post('/courses', async function (req, res) {
   }
 });
 
-router.put('/courses/:id', async function (req, res) {
+router.put('/courses/:id', uploadImage.single('image'), async function (req, res) {
   try {
     if (!Course_model) return res.status(404).json({ success: false, message: 'Course model not loaded.' });
 
     var updates = {};
-    var fields = ['title','category','description','price','fileUrl','image',
+    var fields = ['title','category','description','price','fileUrl',
                   'duration','lessons','level','instructor'];
     fields.forEach(function (f) {
       if (req.body[f] !== undefined) updates[f] = req.body[f];
     });
     if (updates.price !== undefined) updates.isFree = parseFloat(updates.price) === 0;
+
+    // Only touch the image if a new file was actually uploaded — otherwise
+    // leave the course's existing image alone.
+    if (req.file) {
+      var imgRes = await uploadToCloudinary(req.file.buffer, 'imc/courses', 'image');
+      updates.image = imgRes.secure_url;
+    }
 
     var course = await Course_model.findByIdAndUpdate(
       req.params.id, updates, { new: true }
