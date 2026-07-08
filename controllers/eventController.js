@@ -5,6 +5,7 @@ var Event  = require('../models/Event');
 var Ticket = require('../models/Ticket');
 var QRCode = require('qrcode');
 var crypto = require('crypto');
+var { sendTicketConfirmation } = require('../utils/emailService');
 
 // ================================================
 //   GET ALL EVENTS — Public
@@ -121,9 +122,13 @@ async function createEvent(req, res) {
       });
     }
 
-    var ticketTypes = [];
-    if (req.body.ticketTypes && Array.isArray(req.body.ticketTypes)) {
-      ticketTypes = req.body.ticketTypes.map(function (t) {
+   var ticketTypes = [];
+    var rawTicketTypes = req.body.ticketTypes;
+    if (typeof rawTicketTypes === 'string') {
+      try { rawTicketTypes = JSON.parse(rawTicketTypes); } catch (e) { rawTicketTypes = []; }
+    }
+    if (Array.isArray(rawTicketTypes)) {
+      ticketTypes = rawTicketTypes.map(function (t) {
         var qty = parseInt(t.quantity) || 1;
         return {
           name:        (t.name || 'General').trim(),
@@ -147,6 +152,18 @@ async function createEvent(req, res) {
         remaining: defaultQty
       });
     }
+
+    // Free events still need one ticketType to register attendance against —
+    // check-in and "my tickets" are both built around ticketTypes/purchases.
+    if (eventType === 'free' && ticketTypes.length === 0) {
+      ticketTypes.push({
+        name:      'Free Entry',
+        price:     0,
+        isFree:    true,
+        quantity:  100000,
+        remaining: 100000
+      });
+    } 
 
     var event = await Event.create({
       organizer:      req.user._id,
@@ -307,6 +324,20 @@ async function purchaseTicket(req, res) {
     });
 
     console.log('[Ticket] ✅ Purchased:', ticketCode, '| buyer:', req.user.email);
+
+    // Send confirmation email — fire and forget so a slow/failed email
+    // never blocks or fails the purchase itself.
+    sendTicketConfirmation(req.user.email, req.user.firstName || 'there', {
+      eventTitle: event.title,
+      eventDate:  event.eventDate.toDateString(),
+      eventTime:  event.eventTime,
+      location:   event.location,
+      ticketType: ticketType.name,
+      ticketCode: ticketCode,
+      qrImage:    qrImage
+    }).catch(function (err) {
+      console.error('[Ticket] Confirmation email failed:', err.message);
+    });
 
     return res.json({
       success: true,

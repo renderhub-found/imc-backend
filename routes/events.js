@@ -4,6 +4,7 @@ var express     = require('express');
 var router      = express.Router();
 var ctrl        = require('../controllers/eventController');
 var { protect } = require('../middleware/auth');
+var { uploadImage } = require('../middleware/upload');
 
 console.log('[Event Routes] Registering...');
 
@@ -13,11 +14,11 @@ router.get('/', ctrl.getAllEvents);
 // ---- Protected static — BEFORE /:id ----
 router.get('/my-events',  protect, ctrl.getMyEvents);
 router.get('/my-tickets', protect, ctrl.getMyTickets);
-router.post('/',          protect, ctrl.createEvent);
+router.post('/',          protect, uploadImage.single('coverImage'), ctrl.createEvent);
 
 // ---- Dynamic /:id routes ----
 router.get('/:id',                                          ctrl.getEventById);
-router.put('/:id',                                 protect, ctrl.updateEvent);
+router.put('/:id',              protect, uploadImage.single('coverImage'), ctrl.updateEvent);
 router.delete('/:id',                              protect, ctrl.deleteEvent);
 router.get('/:id/analytics',                       protect, ctrl.getEventAnalytics);
 router.post('/:id/withdraw',                       protect, ctrl.requestWithdrawal);

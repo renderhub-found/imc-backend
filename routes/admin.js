@@ -315,6 +315,27 @@ router.put('/vendors/:id/status', async function (req, res) {
     );
     if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found.' });
 
+    // Credit the referring ambassador the first time this vendor is approved.
+    // Guarded against double-crediting if status is toggled more than once.
+    if (status === 'approved' && vendor.refCode) {
+      var ambassador = await Ambassador.findOne({ refCode: vendor.refCode });
+      if (ambassador) {
+        var alreadyCredited = ambassador.referrals.some(function (r) {
+          return r.vendorId && r.vendorId.toString() === vendor._id.toString();
+        });
+        if (!alreadyCredited) {
+          var commission = 2000;
+          ambassador.referrals.push({
+            vendorId:   vendor._id,
+            vendorName: vendor.bizName,
+            commission: commission
+          });
+          ambassador.earnings = (ambassador.earnings || 0) + commission;
+          await ambassador.save();
+        }
+      }
+    }
+
     await auditLog(req, 'UPDATE_VENDOR_STATUS', 'Vendor',
       vendor._id.toString(), vendor.bizName + ' → ' + status);
 
@@ -323,7 +344,6 @@ router.put('/vendors/:id/status', async function (req, res) {
     return res.status(500).json({ success: false, message: err.message });
   }
 });
-
 // ================================================
 //   AMBASSADORS
 // ================================================

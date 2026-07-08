@@ -224,10 +224,33 @@ async function sendAdminNotification(subject, message) {
   });
 }
 
+async function sendTicketConfirmation(email, firstName, details) {
+  return sendEmail({
+    to:      email,
+    subject: 'Your Ticket for ' + details.eventTitle + ' — Inside My Campus',
+    html: base(
+      '<p>Hello <strong>' + esc(firstName) + '</strong>,</p>' +
+      '<p>Your ticket is confirmed! 🎉</p>' +
+      '<div class="hl">' +
+      'Event: <strong>' + esc(details.eventTitle) + '</strong><br/>' +
+      'Date: <strong>' + esc(details.eventDate) + '</strong><br/>' +
+      'Time: <strong>' + esc(details.eventTime) + '</strong><br/>' +
+      'Venue: <strong>' + esc(details.location) + '</strong><br/>' +
+      'Ticket Type: <strong>' + esc(details.ticketType) + '</strong><br/>' +
+      'Ticket Code: <code>' + esc(details.ticketCode) + '</code>' +
+      '</div>' +
+      '<p>Show your ticket code or QR code at the entrance to check in.</p>' +
+      (details.qrImage
+        ? '<div style="text-align:center;margin:20px 0;"><img src="' + details.qrImage +
+          '" alt="Ticket QR Code" style="width:180px;height:180px;"/></div>'
+        : '')
+    )
+  });
+}
+
 module.exports = {
   sendEmail, verifyTransporter,
   sendPasswordReset, sendWelcome,
   sendVendorConfirmation, sendVendorApproved,
   sendAmbassadorConfirmation, sendPaymentConfirmation,
-  sendAdminNotification
-};
+  sendAdminNotification, sendTicketConfirmation
