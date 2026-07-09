@@ -19,9 +19,18 @@ async function getAllEvents(req, res) {
     if (req.query.type === 'paid') filter.eventType = 'paid';
 
     if (req.query.when === 'upcoming') {
-      filter.eventDate = { $gte: new Date() };
+      // Compare against the start of today, not the exact current instant.
+      // Otherwise an event dated "today" (stored as UTC midnight) can
+      // appear to already be in the past for timezones ahead of UTC,
+      // and silently vanish from "upcoming" even though it's genuinely
+      // still upcoming from the user's local perspective.
+      var startOfToday = new Date();
+      startOfToday.setUTCHours(0, 0, 0, 0);
+      filter.eventDate = { $gte: startOfToday };
     } else if (req.query.when === 'past') {
-      filter.eventDate = { $lt: new Date() };
+      var endOfToday = new Date();
+      endOfToday.setUTCHours(23, 59, 59, 999);
+      filter.eventDate = { $lt: endOfToday };
     }
 
     if (req.query.university) {
