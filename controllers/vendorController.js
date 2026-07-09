@@ -79,9 +79,38 @@ const getAllProducts = async function (req, res) {
 
 const getMyVendorProfile = async function (req, res) {
   try {
-    console.log('[Vendor] getMyVendorProfile — user:', req.user.email);
+    console.log('[Vendor] getMyVendorProfile — user:', req.us
 
+// ================================================
+//   REGISTER VENDOR — Protected
+//   POST /api/vendors/register
+// ================================================
+const getMyVendorProfile = async function (req, res) {
+  try {
+    console.log('[Vendor] getMyVendorProfile — user:', req.user.email, '| id:', req.user._id);
+
+    // Primary lookup — the correct, intended path.
     var vendor = await Vendor.findOne({ user: req.user._id });
+
+    // Fallback: if a vendor record exists for this person's email but its
+    // `user` link is missing, null, or points at a different/stale User
+    // document (this happens with records created before the link was
+    // enforced, or via any path that didn't set it correctly), find it by
+    // email instead — email is the one field that's always reliable and
+    // always present. Then self-heal the link so this fallback is never
+    // needed again for this vendor.
+    if (!vendor && req.user.email) {
+      vendor = await Vendor.findOne({ email: req.user.email });
+
+      if (vendor) {
+        console.warn(
+          '[Vendor] Found by email fallback — user link was missing/stale. ' +
+          'Vendor:', vendor._id, '| Healing user link now.'
+        );
+        vendor.user = req.user._id;
+        await vendor.save();
+      }
+    }
 
     if (!vendor) {
       return res.json({
@@ -101,12 +130,6 @@ const getMyVendorProfile = async function (req, res) {
     return res.status(500).json({ success: false, message: err.message });
   }
 };
-
-// ================================================
-//   REGISTER VENDOR — Protected
-//   POST /api/vendors/register
-// ================================================
-
 const registerVendor = async function (req, res) {
   try {
     console.log('[Vendor] registerVendor — user:', req.user.email);

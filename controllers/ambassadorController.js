@@ -100,6 +100,18 @@ async function registerAmbassador(req, res) {
 async function getMyProfile(req, res) {
   try {
     var ambassador = await Ambassador.findOne({ user: req.user._id });
+
+    // Same fallback as vendor profile lookup — heal a missing/stale
+    // user link using email, which is always reliable.
+    if (!ambassador && req.user.email) {
+      ambassador = await Ambassador.findOne({ email: req.user.email });
+      if (ambassador) {
+        console.warn('[Ambassador] Found by email fallback — healing user link:', ambassador._id);
+        ambassador.user = req.user._id;
+        await ambassador.save();
+      }
+    }
+
     if (!ambassador) {
       return res.json({ success: true, isAmbassador: false, ambassador: null });
     }
