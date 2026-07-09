@@ -193,35 +193,7 @@ loadRoute('./routes/ads',         '/api/ads');
 loadRoute('./routes/contact',     '/api/contact');
 loadRoute('./routes/events', '/api/events');
 loadRoute('./routes/notifications', '/api/notifications');
-
-// Vendor routes inline
-(function () {
-  try {
-    var vExpress  = require('express');
-    var vRouter   = vExpress.Router();
-    var vCtrl     = require('./controllers/vendorController');
-    var authMw    = require('./middleware/auth');
-
-    vRouter.use(function (req, res, next) {
-      console.log('[VENDORS]', req.method, req.path);
-      next();
-    });
-
-    vRouter.get('/products/all', vCtrl.getAllProducts);
-    vRouter.get('/my-profile',   authMw.protect, vCtrl.getMyVendorProfile);
-    vRouter.post('/register',    authMw.protect, vCtrl.registerVendor);
-    vRouter.post('/products',    authMw.protect, vCtrl.addProduct);
-    vRouter.delete('/products/:productId', authMw.protect, vCtrl.deleteProduct);
-    vRouter.get('/',             vCtrl.getAllVendors);
-    vRouter.get('/:id',          vCtrl.getVendorById);
-
-    app.use('/api/vendors', vRouter);
-    console.log('✅ Vendor routes inline loaded');
-  } catch (err) {
-    console.error('❌ Vendor routes FAILED:', err.message);
-    console.error('   Stack:', err.stack);
-  }
-})();
+loadRoute('./routes/vendors',       '/api/vendors');
 
 console.log('--- Routes done ---');
 console.log('');

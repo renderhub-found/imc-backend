@@ -4,7 +4,7 @@
 // ================================================
 
 const multer     = require('multer');
-const cloudinary  = require('../config/cloudinary');
+const { uploadBuffer } = require('../config/cloudinary');
 
 // Store files in memory temporarily before sending to Cloudinary
 const storage = multer.memoryStorage();
@@ -42,18 +42,9 @@ const uploadMedia = multer({
 
 // ---- Helper: upload a buffer to Cloudinary ----
 function uploadToCloudinary(fileBuffer, folder, resourceType) {
-  return new Promise(function (resolve, reject) {
-    var stream = cloudinary.uploader.upload_stream(
-      {
-        folder:       folder,
-        resource_type: resourceType || 'image'
-      },
-      function (error, result) {
-        if (error) return reject(error);
-        resolve(result);
-      }
-    );
-    stream.end(fileBuffer);
+  return uploadBuffer(fileBuffer, {
+    folder:        folder,
+    resource_type: resourceType || 'image'
   });
 }
 

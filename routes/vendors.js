@@ -1,41 +1,23 @@
-
-  'use strict';
-const { uploadImage } = require('../middleware/upload');
+'use strict';
+const { uploadImage, uploadMedia, uploadToCloudinary } = require('../middleware/upload');
 const express     = require('express');
 const router      = express.Router();
 const ctrl        = require('../controllers/vendorController');
 const { protect } = require('../middleware/auth');
-
-// =============================================
-// DEBUG — logs every request to /api/vendors/*
-// =============================================
-
-router.use(function (req, res, next) {
-  console.log('VENDOR ROUTER HIT:', req.method, req.url);
-  next();
-});
+const Vendor      = require('../models/Vendor');
 
 // =============================================
 // STATIC ROUTES — must all be above /:id
 // =============================================
 
 // GET /api/vendors/products/all
-router.get('/products/all', function (req, res, next) {
-  console.log('ROUTE HIT: /products/all');
-  next();
-}, ctrl.getAllProducts);
+router.get('/products/all', ctrl.getAllProducts);
 
 // GET /api/vendors/my-profile
-router.get('/my-profile', function (req, res, next) {
-  console.log('ROUTE HIT: /my-profile');
-  next();
-}, protect, ctrl.getMyVendorProfile);
+router.get('/my-profile', protect, ctrl.getMyVendorProfile);
 
 // POST /api/vendors/register
-router.post('/register', function (req, res, next) {
-  console.log('ROUTE HIT: POST /register');
-  next();
-}, protect, ctrl.registerVendor);
+router.post('/register', protect, ctrl.registerVendor);
 
 // POST /api/vendors/products
 router.post(
@@ -59,20 +41,25 @@ router.delete(
 router.get('/', ctrl.getAllVendors);
 
 // POST /api/vendors/upload-image — upload product/vendor image
-router.post('/upload-image', protect, uploadMw.single('image', 'imc/vendors'),
-  function (req, res) {
-    if (!req.cloudinaryUrl) {
+router.post('/upload-image', protect, uploadImage.single('image'),
+  async function (req, res) {
+    if (!req.file) {
       return res.status(400).json({
         success: false,
         message: 'No image uploaded.'
       });
     }
-    return res.json({
-      success:   true,
-      message:   'Image uploaded!',
-      imageUrl:  req.cloudinaryUrl,
-      publicId:  req.cloudinaryPublicId
-    });
+    try {
+      var result = await uploadToCloudinary(req.file.buffer, 'imc/vendors', 'image');
+      return res.json({
+        success:  true,
+        message:  'Image uploaded!',
+        imageUrl: result.secure_url,
+        publicId: result.public_id
+      });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
   }
 );
 
@@ -87,21 +74,15 @@ router.put(
 router.post('/products/:productId/lead', ctrl.logProductLead);
 
 // =============================================
-// /:id MUST BE THE VERY LAST ROUTE
+// /:id MUST BE THE VERY LAST GET ROUTE
 // =============================================
 
-router.get('/:id', function (req, res, next) {
-  console.log('ROUTE HIT: /:id with value:', req.params.id);
-  next();
-}, ctrl.getVendorById);
+router.get('/:id', ctrl.getVendorById);
 
 // POST /api/vendors/complete-registration
 // For users who paid but vendor record was not created
 router.post('/complete-registration', protect, async function (req, res) {
   try {
-    console.log('[CompleteReg] Called by:', req.user.email);
-
-    // Check if already a vendor
     var existing = await Vendor.findOne({ user: req.user._id });
     if (existing) {
       return res.status(200).json({
@@ -111,8 +92,6 @@ router.post('/complete-registration', protect, async function (req, res) {
         alreadyExists: true
       });
     }
-    var uploadMw = require('../middleware/upload');
-    var ctrl = require('../controllers/vendorController');
     return ctrl.registerVendor(req, res);
 
   } catch (err) {
@@ -122,6 +101,5 @@ router.post('/complete-registration', protect, async function (req, res) {
     });
   }
 });
-
 
 module.exports = router;

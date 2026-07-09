@@ -254,3 +254,4 @@ module.exports = {
   sendVendorConfirmation, sendVendorApproved,
   sendAmbassadorConfirmation, sendPaymentConfirmation,
   sendAdminNotification, sendTicketConfirmation
+};
