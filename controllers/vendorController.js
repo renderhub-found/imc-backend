@@ -4,7 +4,7 @@ const Vendor = require('../models/Vendor');
 const User   = require('../models/User');
 
 // ================================================
-//   GET ALL VENDORS — Public
+//   GET ALL VENDORS - Public
 //   GET /api/vendors
 // ================================================
 
@@ -37,7 +37,7 @@ const getAllVendors = async function (req, res) {
 };
 
 // ================================================
-//   GET ALL PRODUCTS — Public
+//   GET ALL PRODUCTS - Public
 //   GET /api/vendors/products/all
 // ================================================
 
@@ -73,41 +73,30 @@ const getAllProducts = async function (req, res) {
 };
 
 // ================================================
-//   GET MY VENDOR PROFILE — Protected
+//   GET MY VENDOR PROFILE - Protected
 //   GET /api/vendors/my-profile
 // ================================================
 
 const getMyVendorProfile = async function (req, res) {
   try {
-    console.log('[Vendor] getMyVendorProfile — user:', req.us
+    console.log('[Vendor] getMyVendorProfile - user:', req.user.email, '| id:', req.user._id);
 
-// ================================================
-//   REGISTER VENDOR — Protected
-//   POST /api/vendors/register
-// ================================================
-const getMyVendorProfile = async function (req, res) {
-  try {
-    console.log('[Vendor] getMyVendorProfile — user:', req.user.email, '| id:', req.user._id);
-
-    // Primary lookup — the correct, intended path.
+    // Primary lookup - the correct, intended path.
     var vendor = await Vendor.findOne({ user: req.user._id });
 
     // Fallback: if a vendor record exists for this person's email but its
-    // `user` link is missing, null, or points at a different/stale User
-    // document (this happens with records created before the link was
-    // enforced, or via any path that didn't set it correctly), find it by
-    // email instead — email is the one field that's always reliable and
-    // always present. Then self-heal the link so this fallback is never
-    // needed again for this vendor.
+    // user link is missing, null, or points at a different/stale User
+    // document, find it by email instead, then self-heal the link.
     if (!vendor && req.user.email) {
-      vendor = await Vendor.findOne({ email: req.user.email });
+      var escapedEmail = req.user.email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      vendor = await Vendor.findOne({
+        email: new RegExp('^' + escapedEmail + '$', 'i')
+      });
 
       if (vendor) {
-        console.warn(
-          '[Vendor] Found by email fallback — user link was missing/stale. ' +
-          'Vendor:', vendor._id, '| Healing user link now.'
-        );
-        vendor.user = req.user._id;
+        console.warn('[Vendor] Found by case-insensitive email fallback, healing user link:', vendor._id);
+        vendor.user  = req.user._id;
+        vendor.email = req.user.email; // normalize stored email too
         await vendor.save();
       }
     }
@@ -130,9 +119,15 @@ const getMyVendorProfile = async function (req, res) {
     return res.status(500).json({ success: false, message: err.message });
   }
 };
+
+// ================================================
+//   REGISTER VENDOR - Protected
+//   POST /api/vendors/register
+// ================================================
+
 const registerVendor = async function (req, res) {
   try {
-    console.log('[Vendor] registerVendor — user:', req.user.email);
+    console.log('[Vendor] registerVendor - user:', req.user.email);
     console.log('[Vendor] body:', JSON.stringify(req.body));
 
     // Already a vendor?
@@ -189,10 +184,10 @@ const registerVendor = async function (req, res) {
       status:        'pending'
     });
 
-    console.log('[Vendor] ✅ Created! ID:', vendor._id);
+    console.log('[Vendor] [OK] Created! ID:', vendor._id);
 
     await User.findByIdAndUpdate(req.user._id, { role: 'vendor' });
-    console.log('[Vendor] User role → vendor');
+    console.log('[Vendor] User role -> vendor');
 
     if (refCode) {
       await creditAmbassador(refCode, vendor._id, bizName);
@@ -215,7 +210,7 @@ const registerVendor = async function (req, res) {
 };
 
 // ================================================
-//   ADD PRODUCT — Protected
+//   ADD PRODUCT - Protected
 //   POST /api/vendors/products
 // ================================================
 
@@ -261,18 +256,18 @@ const addProduct = async function (req, res) {
     await vendor.save();
 
     // Send confirmation email (non-blocking)
-try {
-  var emailService = require('../utils/emailService');
-  emailService.sendVendorConfirmation(
-    req.user.email,
-    req.user.firstName || 'Vendor',
-    bizName
-  ).then(function (r) {
-    console.log('[Vendor] Confirmation email:', r.success ? 'sent' : 'failed');
-  });
-} catch (e) {
-  console.log('[Vendor] Email error:', e.message);
-}
+    try {
+      var emailService = require('../utils/emailService');
+      emailService.sendVendorConfirmation(
+        req.user.email,
+        req.user.firstName || 'Vendor',
+        bizName
+      ).then(function (r) {
+        console.log('[Vendor] Confirmation email:', r.success ? 'sent' : 'failed');
+      });
+    } catch (e) {
+      console.log('[Vendor] Email error:', e.message);
+    }
 
     var added = vendor.products[vendor.products.length - 1];
     return res.status(201).json({
@@ -288,7 +283,7 @@ try {
 };
 
 // ================================================
-//   DELETE PRODUCT — Protected
+//   DELETE PRODUCT - Protected
 //   DELETE /api/vendors/products/:productId
 // ================================================
 
@@ -318,7 +313,7 @@ const deleteProduct = async function (req, res) {
 };
 
 // ================================================
-//   GET VENDOR BY ID — Public
+//   GET VENDOR BY ID - Public
 //   GET /api/vendors/:id
 // ================================================
 
@@ -356,7 +351,7 @@ async function creditAmbassador(refCode, vendorId, bizName) {
     });
     amb.earnings += 2000;
     await amb.save();
-    console.log('[Vendor] ✅ Ambassador credited:', amb.fullName, '+ ₦2000');
+    console.log('[Vendor] [OK] Ambassador credited:', amb.fullName, '+ NGN 2000');
   } catch (err) {
     console.error('[Vendor] creditAmbassador error:', err.message);
   }
@@ -443,7 +438,7 @@ const Notification = require('../models/Notification');
 // ================================================
 //   LOG PRODUCT ORDER LEAD (when customer clicks Order)
 //   POST /api/vendors/products/:productId/lead
-//   Public — no login required to express interest
+//   Public - no login required to express interest
 // ================================================
 
 const logProductLead = async function (req, res) {
@@ -500,5 +495,6 @@ module.exports = {
   deleteProduct,
   getVendorById,
   uploadProfilePicture,
-  logProductLead
+  logProductLead,
+  updateVendorProfile
 };

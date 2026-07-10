@@ -104,10 +104,14 @@ async function getMyProfile(req, res) {
     // Same fallback as vendor profile lookup — heal a missing/stale
     // user link using email, which is always reliable.
     if (!ambassador && req.user.email) {
-      ambassador = await Ambassador.findOne({ email: req.user.email });
+      var escapedEmail = req.user.email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      ambassador = await Ambassador.findOne({
+        email: new RegExp('^' + escapedEmail + '$', 'i')
+      });
       if (ambassador) {
-        console.warn('[Ambassador] Found by email fallback — healing user link:', ambassador._id);
-        ambassador.user = req.user._id;
+        console.warn('[Ambassador] Found by case-insensitive email fallback, healing user link:', ambassador._id);
+        ambassador.user  = req.user._id;
+        ambassador.email = req.user.email;
         await ambassador.save();
       }
     }
