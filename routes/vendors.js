@@ -24,7 +24,7 @@ router.post(
   '/products',
   protect,
   uploadMedia.fields([
-    { name: 'image', maxCount: 1 },
+    { name: 'images', maxCount: 4 },
     { name: 'video', maxCount: 1 }
   ]),
   ctrl.addProduct
@@ -69,6 +69,17 @@ router.put(
   protect,
   uploadImage.single('image'),
   ctrl.uploadProfilePicture
+);
+
+// PUT /api/vendors/profile - update bizName/description/location/phone/whatsapp/social/logo/cover
+router.put(
+  '/profile',
+  protect,
+  uploadMedia.fields([
+    { name: 'logo', maxCount: 1 },
+    { name: 'cover', maxCount: 1 }
+  ]),
+  ctrl.updateVendorProfile
 );
 
 router.post('/products/:productId/lead', ctrl.logProductLead);

@@ -40,25 +40,27 @@ const getAllVendors = async function (req, res) {
 //   GET ALL PRODUCTS - Public
 //   GET /api/vendors/products/all
 // ================================================
-
 const getAllProducts = async function (req, res) {
   try {
     var vendors = await Vendor.find({ status: 'approved' })
-      .select('bizName university category products');
+      .select('bizName university category products profilePicture');
 
     var all = [];
     vendors.forEach(function (v) {
       v.products.forEach(function (p) {
+        var imgs = (p.images && p.images.length > 0) ? p.images : (p.image ? [p.image] : []);
         all.push({
           _id:        p._id,
           name:       p.name,
           price:      p.price,
           description:p.description,
-          image:      p.image,
+          image:      imgs[0] || '',
+          images:     imgs,
           video:      p.video,
           category:   p.category || v.category,
           vendorId:   v._id,
           vendorName: v.bizName,
+          vendorLogo: v.profilePicture || '',
           vendorWhatsAPP:  v.whatsApp,
           university: v.university
         });
@@ -67,6 +69,7 @@ const getAllProducts = async function (req, res) {
 
     return res.json({ success: true, count: all.length, products: all });
   } catch (err) {
+
     console.error('[Vendor] getAllProducts:', err.message);
     return res.status(500).json({ success: false, message: err.message });
   }
@@ -226,14 +229,18 @@ const addProduct = async function (req, res) {
     var name        = (req.body.name        || '').trim();
     var price       = parseFloat(req.body.price) || 0;
     var description = (req.body.description || '').trim();
-    var image = '';
-    var video = '';
+    var images = [];
+    var video  = '';
 
-    if (req.files && req.files.image && req.files.image[0]) {
-      var imgRes = await uploadToCloudinary(
-        req.files.image[0].buffer, 'imc/products', 'image'
+    // Up to 4 images per product.
+    if (req.files && req.files.images && req.files.images.length > 0) {
+      var filesToUpload = req.files.images.slice(0, 4);
+      var uploadResults = await Promise.all(
+        filesToUpload.map(function (f) {
+          return uploadToCloudinary(f.buffer, 'imc/products', 'image');
+        })
       );
-      image = imgRes.secure_url;
+      images = uploadResults.map(function (r) { return r.secure_url; });
     }
 
     if (req.files && req.files.video && req.files.video[0]) {
@@ -242,8 +249,8 @@ const addProduct = async function (req, res) {
       );
       video = vidRes.secure_url;
     }
-    
-    var category    = (req.body.category    || vendor.category).trim();
+
+    var category = (req.body.category || vendor.category).trim();
 
     if (!name || !price || !description) {
       return res.status(400).json({
@@ -251,17 +258,26 @@ const addProduct = async function (req, res) {
         message: 'Name, price and description are required.'
       });
     }
+    if (images.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please upload at least one product image.'
+      });
+    }
 
-    vendor.products.push({ name, price, description, image, video, category });
+    vendor.products.push({
+      name, price, description, video, category,
+      images: images,
+      image:  images[0]
+    });
     await vendor.save();
 
-    // Send confirmation email (non-blocking)
     try {
       var emailService = require('../utils/emailService');
       emailService.sendVendorConfirmation(
         req.user.email,
         req.user.firstName || 'Vendor',
-        bizName
+        vendor.bizName
       ).then(function (r) {
         console.log('[Vendor] Confirmation email:', r.success ? 'sent' : 'failed');
       });
@@ -370,11 +386,30 @@ async function updateVendorProfile(req, res) {
     }
 
     var updates = {};
-    if (req.body.bizName)     updates.bizName     = req.body.bizName.trim();
-    if (req.body.description) updates.description = req.body.description.trim();
-    if (req.body.whatsApp)    updates.whatsApp    = req.body.whatsApp.trim();
-    if (req.body.category)    updates.category    = req.body.category.trim();
+    if (req.body.bizName)        updates.bizName        = req.body.bizName.trim();
+    if (req.body.description)    updates.description    = req.body.description.trim();
+    if (req.body.whatsApp)       updates.whatsApp       = req.body.whatsApp.trim();
+    if (req.body.phone)          updates.phone          = req.body.phone.trim();
+    if (req.body.category)       updates.category       = req.body.category.trim();
     if (req.body.campusLocation) updates.campusLocation = req.body.campusLocation.trim();
+
+    if (req.body.instagram || req.body.facebook || req.body.twitter || req.body.tiktok) {
+      updates.socialMedia = {
+        instagram: (req.body.instagram || vendor.socialMedia.instagram || '').trim(),
+        facebook:  (req.body.facebook  || vendor.socialMedia.facebook  || '').trim(),
+        twitter:   (req.body.twitter   || vendor.socialMedia.twitter   || '').trim(),
+        tiktok:    (req.body.tiktok    || vendor.socialMedia.tiktok    || '').trim()
+      };
+    }
+
+    if (req.files && req.files.logo && req.files.logo[0]) {
+      var logoRes = await uploadToCloudinary(req.files.logo[0].buffer, 'imc/vendor-profiles', 'image');
+      updates.profilePicture = logoRes.secure_url;
+    }
+    if (req.files && req.files.cover && req.files.cover[0]) {
+      var coverRes = await uploadToCloudinary(req.files.cover[0].buffer, 'imc/vendor-covers', 'image');
+      updates.coverImage = coverRes.secure_url;
+    }
 
     var updated = await Vendor.findByIdAndUpdate(vendor._id, updates, { new: true });
 
@@ -495,6 +530,6 @@ module.exports = {
   deleteProduct,
   getVendorById,
   uploadProfilePicture,
-  logProductLead,
-  updateVendorProfile
+  updateVendorProfile,
+  logProductLead
 };
