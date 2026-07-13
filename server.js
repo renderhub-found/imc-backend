@@ -105,14 +105,24 @@ var allowedOrigins = [
   'http://127.0.0.1:5500',
   'http://localhost:5500',
   'http://localhost:3000',
-  'https://insidemycampusx.netlify.app/',
+  'https://insidemycampus.netlify.app',
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
+// Matches any *.netlify.app subdomain - covers the production site,
+// any renamed site, and Netlify's auto-generated preview/branch deploy
+// URLs, all of which are legitimate and none of which should require a
+// manual whitelist edit every time one changes.
+var netlifyOriginPattern = /^https:\/\/[a-z0-9-]+\.netlify\.app$/i;
+
 app.use(function (req, res, next) {
   var origin = req.headers.origin;
+  var isAllowed = origin && (
+    allowedOrigins.indexOf(origin) !== -1 ||
+    netlifyOriginPattern.test(origin)
+  );
 
-  if (origin && allowedOrigins.indexOf(origin) !== -1) {
+  if (isAllowed) {
     res.setHeader('Access-Control-Allow-Origin',      origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
   } else if (!origin) {
