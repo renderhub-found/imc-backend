@@ -75,6 +75,11 @@ async function registerAmbassador(req, res) {
 
     await User.findByIdAndUpdate(userId, { role: 'ambassador' });
 
+    var emailService = require('../utils/emailService');
+    emailService.sendAmbassadorConfirmation(req.user.email, fullName, refCode).catch(function (err) {
+      console.error('[Ambassador] Confirmation email failed:', err.message);
+    });
+
     return res.status(201).json({
       success:    true,
       message:    'Ambassador account created! Your referral code: ' + refCode,

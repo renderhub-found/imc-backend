@@ -15,6 +15,8 @@ var Ad         = require('../models/Ad');
 var News       = require('../models/News');
 var Course     = require('../models/Course');
 var AdminLog   = require('../models/AdminLog');
+var Notification = require('../models/Notification');
+var { createNotification } = require('../controllers/notificationController');
 
 var Ad_model, Course_model;
 try { Ad_model     = require('../models/Ad');     } catch(e) { Ad_model = null; }
@@ -149,7 +151,7 @@ const getAllNotificationsAdmin = async function (req, res) {
       .limit(100)
       .lean();
 
-    var unreadCount = await Notification.countDocuments({ read: false });
+    var unreadCount = await Notification.countDocuments({ isRead: false });
 
     return res.status(200).json({
       success: true,
@@ -335,9 +337,21 @@ router.put('/vendors/:id/status', async function (req, res) {
         }
       }
     }
-
-    await auditLog(req, 'UPDATE_VENDOR_STATUS', 'Vendor',
+await auditLog(req, 'UPDATE_VENDOR_STATUS', 'Vendor',
       vendor._id.toString(), vendor.bizName + ' → ' + status);
+
+    if (status === 'approved') {
+      var emailService = require('../utils/emailService');
+      emailService.sendVendorApproved(vendor.email, vendor.fullName, vendor.bizName).catch(function (err) {
+        console.error('[Vendor] Approval email failed:', err.message);
+      });
+      createNotification(
+        vendor.user, 'vendor_approved',
+        'Your Store is Live! 🎉',
+        vendor.bizName + ' has been approved and is now visible to students.',
+        'vendor-dashboard.html', '🟢'
+      );
+    }
 
     return res.json({ success: true, message: 'Vendor ' + status + '.', vendor: vendor });
   } catch (err) {

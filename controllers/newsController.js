@@ -106,9 +106,20 @@ const updateNewsStatus = async function (req, res) {
     if (!news) {
       return res.status(404).json({ success: false, message: 'News not found.' });
     }
+    var prevStatus = news.status;
     if (req.body.status) news.status = req.body.status;
     if (typeof req.body.pinned !== 'undefined') news.pinned = req.body.pinned;
     await news.save();
+
+    if (news.status === 'approved' && prevStatus !== 'approved' && news.author) {
+      var { createNotification } = require('./notificationController');
+      createNotification(
+        news.author, 'news_approved',
+        'Your Article is Live! 📰',
+        '"' + news.title + '" has been approved and published.',
+        'campus-news.html?id=' + news._id, '📰'
+      );
+    }
 
     return res.status(200).json({ success: true, message: 'News updated.', news: news });
   } catch (err) {

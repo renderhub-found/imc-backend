@@ -19,6 +19,8 @@ const AdSchema = new mongoose.Schema(
     description: { type: String, required: true },
     location:    { type: String, required: true },
     contact:     { type: String, required: true },
+    whatsapp:    { type: String, default: '' },
+    websiteUrl:  { type: String, default: '' },
     image:       { type: String, default: '' },
 
     duration: { type: Number, default: 7 },

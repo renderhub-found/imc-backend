@@ -82,7 +82,9 @@ router.put(
   ctrl.updateVendorProfile
 );
 
-router.post('/products/:productId/lead', ctrl.logProductLead);
+router.post('/products/:productId/lead',  ctrl.logProductLead);
+router.post('/products/:productId/click', ctrl.logProductClick);
+router.post('/:id/rate', protect, ctrl.rateVendor);
 
 // =============================================
 // /:id MUST BE THE VERY LAST GET ROUTE

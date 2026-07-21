@@ -40,6 +40,8 @@ const submitAd = async function (req, res) {
     var description = (req.body.description || '').trim();
     var location    = (req.body.location    || '').trim();
     var contact     = (req.body.contact     || '').trim();
+    var whatsapp    = (req.body.whatsapp    || '').trim();
+    var websiteUrl  = (req.body.websiteUrl  || '').trim();
     var image       = (req.body.image       || '').trim();
     var duration    = parseInt(req.body.duration) || 7;
     var paymentRef  = (req.body.paymentRef  || '').trim();
@@ -74,6 +76,8 @@ const submitAd = async function (req, res) {
       description:   description,
       location:      location,
       contact:       contact,
+      whatsapp:      whatsapp,
+      websiteUrl:    websiteUrl,
       image:         image,
       duration:      duration,
       price:         price,

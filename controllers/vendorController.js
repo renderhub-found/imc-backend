@@ -61,7 +61,7 @@ const getAllProducts = async function (req, res) {
           vendorId:   v._id,
           vendorName: v.bizName,
           vendorLogo: v.profilePicture || '',
-          vendorWhatsAPP:  v.whatsApp,
+          vendorWhatsApp:  v.whatsApp,
           university: v.university
         });
       });
@@ -493,17 +493,23 @@ const logProductLead = async function (req, res) {
       return p._id.toString() === req.params.productId;
     });
 
-    var customerName = (req.body.customerName || 'A customer').trim();
+ var customerName = (req.body.customerName || 'A customer').trim();
 
+    if (product) product.orders = (product.orders || 0) + 1;
+    await vendor.save();
+
+    // NOTE: the Notification schema requires `recipient` (not `user`) and
+    // uses `isRead` (not `read`) — this call was silently failing validation
+    // before, which is why no order-lead notifications were ever appearing
+    // anywhere (vendor bell, admin dashboard).
     await Notification.create({
-      user:               vendor.user,
-      type:               'order_lead',
-      title:              'New Order Interest!',
-      message:            customerName + ' is interested in "' + (product ? product.name : 'your product') + '"',
-      relatedProductId:   req.params.productId,
-      relatedProductName: product ? product.name : '',
-      customerName:       customerName,
-      read:               false
+      recipient: vendor.user,
+      type:      'order_lead',
+      title:     'New Order Interest!',
+      message:   customerName + ' is interested in "' + (product ? product.name : 'your product') + '"',
+      link:      'vendor-dashboard.html',
+      icon:      '🛍️',
+      isRead:    false
     });
 
     return res.status(200).json({
@@ -520,6 +526,75 @@ const logProductLead = async function (req, res) {
   }
 };
 
+// ================================================
+//   LOG PRODUCT CLICK (product page view)
+//   POST /api/vendors/products/:productId/click
+//   Public
+// ================================================
+
+const logProductClick = async function (req, res) {
+  try {
+    var vendor = await Vendor.findOne({ 'products._id': req.params.productId });
+    if (!vendor) {
+      return res.status(404).json({ success: false, message: 'Product not found.' });
+    }
+    var product = vendor.products.find(function (p) {
+      return p._id.toString() === req.params.productId;
+    });
+    if (product) product.clicks = (product.clicks || 0) + 1;
+    await vendor.save();
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('Log product click error:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ================================================
+//   RATE VENDOR
+//   POST /api/vendors/:id/rate  — Protected, one rating per user
+// ================================================
+
+const rateVendor = async function (req, res) {
+  try {
+    var value = parseInt(req.body.value);
+    if (!value || value < 1 || value > 5) {
+      return res.status(400).json({ success: false, message: 'Rating must be 1-5.' });
+    }
+
+    var vendor = await Vendor.findById(req.params.id);
+    if (!vendor) {
+      return res.status(404).json({ success: false, message: 'Vendor not found.' });
+    }
+
+    var existing = vendor.ratings.find(function (r) {
+      return r.user.toString() === req.user._id.toString();
+    });
+
+    if (existing) {
+      existing.value = value;
+    } else {
+      vendor.ratings.push({ user: req.user._id, value: value });
+    }
+
+    var total = vendor.ratings.reduce(function (sum, r) { return sum + r.value; }, 0);
+    vendor.ratingCount = vendor.ratings.length;
+    vendor.avgRating   = vendor.ratingCount ? (total / vendor.ratingCount) : 0;
+
+    await vendor.save();
+
+    return res.json({
+      success:     true,
+      avgRating:   vendor.avgRating,
+      ratingCount: vendor.ratingCount
+    });
+
+  } catch (err) {
+    console.error('Rate vendor error:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 
 module.exports = {
   getAllVendors,
@@ -531,5 +606,7 @@ module.exports = {
   getVendorById,
   uploadProfilePicture,
   updateVendorProfile,
-  logProductLead
-};
+  logProductLead,
+  logProductClick,
+  rateVendor
+};   

@@ -204,6 +204,7 @@ loadRoute('./routes/contact',     '/api/contact');
 loadRoute('./routes/events', '/api/events');
 loadRoute('./routes/notifications', '/api/notifications');
 loadRoute('./routes/vendors',       '/api/vendors');
+loadRoute('./routes/share',         '/api/share');
 
 console.log('--- Routes done ---');
 console.log('');
