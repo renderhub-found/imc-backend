@@ -1,0 +1,16 @@
+{
+  "name": "Inside My Campus",
+  "short_name": "IMC",
+  "start_url": "https://insidemycampus.com/",
+  "scope": "https://insidemycampus.com/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1a3c8f",
+  "icons": [
+    {
+      "src": "https://insidemycampus.com/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}

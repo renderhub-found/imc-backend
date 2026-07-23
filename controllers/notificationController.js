@@ -30,6 +30,26 @@ async function getNotifications(req, res) {
   }
 }
 
+const getMyNotifications = async function (req, res) {
+  try {
+    var notifications = await Notification.find({ user: req.user._id })
+      .sort({ createdAt: -1 })
+      .limit(50);
+
+    var unreadCount = await Notification.countDocuments({
+      user: req.user._id, read: false
+    });
+
+    return res.status(200).json({
+      success:       true,
+      notifications: notifications,
+      unreadCount:   unreadCount
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // PUT /api/notifications/:id/read
 async function markAsRead(req, res) {
   try {

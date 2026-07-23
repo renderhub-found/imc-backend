@@ -6,8 +6,8 @@ const News    = require('../models/News');
 const Event   = require('../models/Event');
 const Vendor  = require('../models/Vendor');
 
-var FRONTEND_URL = process.env.FRONTEND_URL || 'https://insidemycampus.netlify.app';
-var FALLBACK_IMAGE = 'https://insidemycampus.netlify.app/favicon.png';
+var FRONTEND_URL = process.env.FRONTEND_URL || 'https://insidemycampus.com';
+var FALLBACK_IMAGE = 'https://insidemycampus.com/favicon.png';
 
 function esc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;')

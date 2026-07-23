@@ -85,7 +85,7 @@ const initializePayment = async function (req, res) {
     var amountKobo  = amount * 100;
     var reference   = 'IMC-' + type.toUpperCase().replace(/_/g, '-') + '-' + Date.now();
     var frontendUrl = process.env.FRONTEND_URL ||
-      'https://resilient-ganache-be5b9c.netlify.app';
+      'https://insidemycampus.com';
     var callbackUrl = frontendUrl + '/payment-success.html';
 
     var payload = {

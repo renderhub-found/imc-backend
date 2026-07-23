@@ -341,7 +341,7 @@ async function forgotPassword(req, res) {
     await user.save();
 
     var frontendUrl = process.env.FRONTEND_URL ||
-      'https://resilient-ganache-be5b9c.netlify.app';
+      'https://insidemycampus.com';
     var resetUrl = frontendUrl + '/reset-password.html?token=' + resetToken;
 
     console.log('[Auth] Reset token saved for:', email);
