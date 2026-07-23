@@ -108,7 +108,6 @@ router.get('/stats', async function (req, res) {
 
 const Event = require('../models/Event');
 const Ticket = require('../models/Ticket');
-const Notification = require('../models/Notification');
 
 // ================================================
 //   ADMIN: GET ALL EVENTS
