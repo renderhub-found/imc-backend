@@ -1,62 +1,36 @@
 'use strict';
 
-var nodemailer = require('nodemailer');
+var { Resend } = require('resend');
 
 console.log('[Email] Loading emailService...');
-console.log('[Email] EMAIL_USER:', process.env.EMAIL_USER || 'NOT SET ❌');
-console.log('[Email] EMAIL_PASS:', process.env.EMAIL_PASS ? 'SET ✅' : 'NOT SET ❌');
+console.log('[Email] RESEND_API_KEY:', process.env.RESEND_API_KEY ? 'SET ✅' : 'NOT SET ❌');
+console.log('[Email] EMAIL_FROM:', process.env.EMAIL_FROM || 'NOT SET ❌');
 
 // ================================================
-//   CREATE TRANSPORTER — Brevo SMTP
-//   Works reliably on Render, Railway, any cloud
-//   No IPv6 issues like Gmail
+//   RESEND CLIENT
 // ================================================
 
-function createTransporter() {
-  var user = process.env.EMAIL_USER;
-  var pass = process.env.EMAIL_PASS;
-
-  if (!user || !pass) {
-    console.warn('[Email] No transporter: EMAIL_USER or EMAIL_PASS missing');
+function getResendClient() {
+  var key = process.env.RESEND_API_KEY;
+  if (!key) {
+    console.warn('[Email] No client: RESEND_API_KEY missing');
     return null;
   }
-
-  return nodemailer.createTransport({
-    host:   'smtp-relay.brevo.com',
-    port:   587,
-    secure: false,
-    auth: {
-      user: user,
-      pass: pass
-    },
-    tls: {
-      rejectUnauthorized: false,
-      minVersion:         'TLSv1.2'
-    },
-    connectionTimeout: 15000,
-    greetingTimeout:   15000,
-    socketTimeout:     20000
-  });
+  return new Resend(key);
 }
 
 // ================================================
-//   VERIFY TRANSPORTER
+//   VERIFY (kept for compatibility with existing callers)
 // ================================================
 
 async function verifyTransporter() {
-  var t = createTransporter();
-  if (!t) {
-    console.warn('[Email] Cannot verify: no transporter');
+  var client = getResendClient();
+  if (!client || !process.env.EMAIL_FROM) {
+    console.warn('[Email] Cannot verify: RESEND_API_KEY or EMAIL_FROM missing');
     return false;
   }
-  try {
-    await t.verify();
-    console.log('[Email] ✅ Brevo SMTP verified OK');
-    return true;
-  } catch (err) {
-    console.error('[Email] ❌ Verify failed:', err.message);
-    return false;
-  }
+  console.log('[Email] ✅ Resend configured OK');
+  return true;
 }
 
 // ================================================
@@ -64,9 +38,9 @@ async function verifyTransporter() {
 // ================================================
 
 async function sendEmail(options) {
-  var t = createTransporter();
-  if (!t) {
-    console.warn('[Email] Skipping: no transporter');
+  var client = getResendClient();
+  if (!client) {
+    console.warn('[Email] Skipping: no client');
     return { success: false, message: 'Email not configured' };
   }
   if (!options.to || !options.subject || !options.html) {
@@ -74,22 +48,24 @@ async function sendEmail(options) {
   }
   try {
     console.log('[Email] Sending to:', options.to);
-    var info = await t.sendMail({
-      from:    process.env.EMAIL_FROM ||
-               '"Inside My Campus" <' + process.env.EMAIL_USER + '>',
+    var result = await client.emails.send({
+      from:    process.env.EMAIL_FROM,
       to:      options.to,
       subject: options.subject,
       html:    options.html,
       text:    (options.html || '').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim()
     });
-    console.log('[Email] ✅ Sent! ID:', info.messageId);
-    return { success: true, messageId: info.messageId };
+    if (result.error) {
+      console.error('[Email] ❌ Failed:', result.error.message);
+      return { success: false, message: result.error.message };
+    }
+    console.log('[Email] ✅ Sent! ID:', result.data && result.data.id);
+    return { success: true, messageId: result.data && result.data.id };
   } catch (err) {
-    console.error('[Email] ❌ Failed:', err.message, '| Code:', err.code || '—');
+    console.error('[Email] ❌ Failed:', err.message);
     return { success: false, message: err.message };
   }
 }
-
 // ================================================
 //   BASE HTML TEMPLATE
 // ================================================
@@ -216,9 +192,9 @@ async function sendPaymentConfirmation(email, firstName, type, amount, reference
 }
 
 async function sendAdminNotification(subject, message) {
-  if (!process.env.EMAIL_USER) return;
+  if (!process.env.EMAIL_FROM) return;
   return sendEmail({
-    to:      process.env.EMAIL_USER,
+    to:      process.env.EMAIL_FROM,
     subject: '[IMC Admin] ' + subject,
     html:    base('<p>' + esc(message).replace(/\n/g,'</p><p>') + '</p>')
   });
