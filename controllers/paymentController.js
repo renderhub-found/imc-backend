@@ -206,83 +206,107 @@ const verifyPayment = async function (req, res) {
 // ================================================
 //   PROCESS PAYMENT — creates/updates records
 // ================================================
-
 async function processPayment(type, reference, user, amount, metadata) {
   console.log('[Payment] processPayment — type:', type, '| user:', user.email);
 
-  // ---- VENDOR REGISTRATION ----
-if (type === 'vendor_registration') {
-  console.log('[Payment] Processing vendor_registration');
-
-  // Try to find existing vendor
-  var existingVendor = await Vendor.findOne({ user: user._id });
-
-  if (existingVendor) {
-    // Update payment status on existing record
-    existingVendor.paymentStatus = 'paid';
-    existingVendor.paymentRef    = reference;
-    await existingVendor.save();
-    console.log('[Payment] ✅ Existing vendor payment updated:', existingVendor.bizName);
+  // ---- VENDOR SUBSCRIPTION RENEWAL ----
+  if (type === 'vendor_renewal') {
+    var renewVendor = await Vendor.findOne({ user: user._id });
+    if (!renewVendor) {
+      return { updated: 'none', reason: 'vendor not found' };
+    }
+    var base = (renewVendor.subscriptionExpiresAt && new Date(renewVendor.subscriptionExpiresAt) > new Date())
+      ? new Date(renewVendor.subscriptionExpiresAt)
+      : new Date();
+    base.setMonth(base.getMonth() + 6);
+    renewVendor.subscriptionExpiresAt = base;
+    renewVendor.paymentRef = reference;
+    await renewVendor.save();
+    console.log('[Payment] ✅ Vendor subscription renewed:', renewVendor.bizName, '| until', base);
     return {
-      updated:     'vendor',
-      bizName:     existingVendor.bizName,
+      updated:     'vendor_renewal',
+      bizName:     renewVendor.bizName,
+      expiresAt:   base,
       redirectUrl: 'vendor-dashboard.html'
     };
   }
 
-  // No vendor document — create from vendorForm in metadata
-  var form = metadata.vendorForm || null;
+  // ---- VENDOR REGISTRATION ----
+  if (type === 'vendor_registration') {
+    console.log('[Payment] Processing vendor_registration');
 
-  if (form && form.bizName) {
-    console.log('[Payment] Creating vendor from metadata form...');
-    console.log('[Payment] Form data:', JSON.stringify(form));
+    // Try to find existing vendor
+    var existingVendor = await Vendor.findOne({ user: user._id });
 
-    var newVendor = await Vendor.create({
-      user:          user._id,
-      fullName:      form.fullName    ||
-                     ((user.firstName || '') + ' ' + (user.lastName || '')).trim(),
-      email:         user.email,
-      bizName:       form.bizName,
-      university:    form.university  || '',
-      category:      form.category    || '',
-      description:   form.description || '',
-      whatsApp:      form.whatsApp    || '',
-      refCode:       form.refCode     || '',
-      paymentRef:    reference,
-      paymentStatus: 'paid',
-      status:        'pending'
-    });
-
-    // Update user role
-    await User.findByIdAndUpdate(user._id, { role: 'vendor' });
-
-    // Credit ambassador if referral code exists
-    if (form.refCode) {
-      await creditAmbassadorReferral(form.refCode, newVendor._id, form.bizName);
+    if (existingVendor) {
+      // Update payment status on existing record
+      existingVendor.paymentStatus = 'paid';
+      existingVendor.paymentRef    = reference;
+      await existingVendor.save();
+      console.log('[Payment] ✅ Existing vendor payment updated:', existingVendor.bizName);
+      return {
+        updated:     'vendor',
+        bizName:     existingVendor.bizName,
+        redirectUrl: 'vendor-dashboard.html'
+      };
     }
 
-    console.log('[Payment] ✅ Vendor CREATED:', newVendor.bizName, '| ID:', newVendor._id);
+    // No vendor document — create from vendorForm in metadata
+    var form = metadata.vendorForm || null;
 
-    return {
-      updated:     'vendor',
-      bizName:     newVendor.bizName,
-      vendorId:    newVendor._id.toString(),
-      redirectUrl: 'vendor-dashboard.html'
-    };
+    if (form && form.bizName) {
+      console.log('[Payment] Creating vendor from metadata form...');
+      console.log('[Payment] Form data:', JSON.stringify(form));
 
-  } else {
-    // No form data in metadata
-    // Store payment ref — vendor.js will complete on next load
-    console.log('[Payment] No vendorForm in metadata.');
-    console.log('[Payment] Payment ref stored. User must complete form.');
-    return {
-      updated: 'vendor_payment_only',
-      note:    'Payment received. Form data missing from metadata.',
-      redirectUrl: 'vendor.html'
-    };
+      var sixMonthsFromNow = new Date();
+      sixMonthsFromNow.setMonth(sixMonthsFromNow.getMonth() + 6);
+
+      var newVendor = await Vendor.create({
+        user:          user._id,
+        fullName:      form.fullName    ||
+                       ((user.firstName || '') + ' ' + (user.lastName || '')).trim(),
+        email:         user.email,
+        bizName:       form.bizName,
+        university:    form.university  || '',
+        category:      form.category    || '',
+        description:   form.description || '',
+        whatsApp:      form.whatsApp    || '',
+        refCode:       form.refCode     || '',
+        paymentRef:    reference,
+        paymentStatus: 'paid',
+        status:        'pending',
+        subscriptionExpiresAt: sixMonthsFromNow
+      });
+
+      // Update user role
+      await User.findByIdAndUpdate(user._id, { role: 'vendor' });
+
+      // Credit ambassador if referral code exists
+      if (form.refCode) {
+        await creditAmbassadorReferral(form.refCode, newVendor._id, form.bizName);
+      }
+
+      console.log('[Payment] ✅ Vendor CREATED:', newVendor.bizName, '| ID:', newVendor._id);
+
+      return {
+        updated:     'vendor',
+        bizName:     newVendor.bizName,
+        vendorId:    newVendor._id.toString(),
+        redirectUrl: 'vendor-dashboard.html'
+      };
+
+    } else {
+      // No form data in metadata
+      // Store payment ref — vendor.js will complete on next load
+      console.log('[Payment] No vendorForm in metadata.');
+      console.log('[Payment] Payment ref stored. User must complete form.');
+      return {
+        updated: 'vendor_payment_only',
+        note:    'Payment received. Form data missing from metadata.',
+        redirectUrl: 'vendor.html'
+      };
+    }
   }
-}
-  
 
   // ---- AD POSTING ----
   if (type === 'ad_posting') {

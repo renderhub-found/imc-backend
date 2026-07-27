@@ -226,6 +226,14 @@ const addProduct = async function (req, res) {
       });
     }
 
+    if (vendor.subscriptionExpiresAt && new Date(vendor.subscriptionExpiresAt) < new Date()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your vendor subscription has expired. Please renew to post new products.',
+        subscriptionExpired: true
+      });
+    }
+
     var name        = (req.body.name        || '').trim();
     var price       = parseFloat(req.body.price) || 0;
     var description = (req.body.description || '').trim();
