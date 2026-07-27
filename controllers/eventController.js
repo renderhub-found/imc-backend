@@ -5,7 +5,39 @@ var Event  = require('../models/Event');
 var Ticket = require('../models/Ticket');
 var QRCode = require('qrcode');
 var crypto = require('crypto');
+var https  = require('https');
 var { sendTicketConfirmation } = require('../utils/emailService');
+
+function verifyPaystackRef(reference) {
+  return new Promise(function (resolve, reject) {
+    var options = {
+      hostname: 'api.paystack.co',
+      port:     443,
+      path:     '/transaction/verify/' + encodeURIComponent(reference),
+      method:   'GET',
+      headers: {
+        'Authorization': 'Bearer ' + process.env.PAYSTACK_SECRET_KEY
+      }
+    };
+    var req = https.request(options, function (response) {
+      var raw = '';
+      response.on('data', function (c) { raw += c; });
+      response.on('end', function () {
+        try {
+          resolve(JSON.parse(raw));
+        } catch (e) {
+          reject(new Error('Invalid Paystack response'));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(20000, function () {
+      req.destroy();
+      reject(new Error('Paystack timeout'));
+    });
+    req.end();
+  });
+}
 
 // ================================================
 //   GET ALL EVENTS — Public
@@ -279,12 +311,39 @@ async function purchaseTicket(req, res) {
     }
 
     var paymentRef = (req.body.paymentRef || '').trim();
+    var isPaidTicket = !ticketType.isFree && ticketType.price > 0;
 
-    if (!ticketType.isFree && ticketType.price > 0 && !paymentRef) {
+    if (isPaidTicket && !paymentRef) {
       return res.status(400).json({
         success: false,
         message: 'Payment reference required for paid tickets.'
       });
+    }
+
+    if (isPaidTicket) {
+      var verifyResult;
+      try {
+        verifyResult = await verifyPaystackRef(paymentRef);
+      } catch (err) {
+        return res.status(502).json({ success: false, message: 'Could not verify payment: ' + err.message });
+      }
+
+      var tx = verifyResult && verifyResult.data;
+      if (!verifyResult || !verifyResult.status || !tx || tx.status !== 'success') {
+        return res.status(400).json({ success: false, message: 'Payment could not be verified.' });
+      }
+
+      var expectedKobo = Math.round(ticketType.price * 100);
+      if (tx.amount < expectedKobo) {
+        return res.status(400).json({ success: false, message: 'Amount paid does not match ticket price.' });
+      }
+
+      var alreadyUsedRef = event.purchases.find(function (p) {
+        return p.paymentRef === paymentRef;
+      });
+      if (alreadyUsedRef) {
+        return res.status(400).json({ success: false, message: 'This payment reference has already been used.' });
+      }
     }
 
     var ticketCode = 'IMC-EVT-' + crypto.randomBytes(6).toString('hex').toUpperCase();
