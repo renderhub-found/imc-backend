@@ -5,11 +5,15 @@ const Ad = require('../models/Ad');
 // GET /api/ads — Public
 const getAllAds = async function (req, res) {
   try {
-    var filter = { status: 'approved', paymentStatus: 'paid' };
+   var filter = {
+      status: 'approved',
+      paymentStatus: 'paid',
+      expiryDate: { $gt: new Date() }
+    };
     if (req.query.category) filter.category = new RegExp(req.query.category, 'i');
     if (req.query.location) filter.location = new RegExp(req.query.location, 'i');
 
-    var ads = await Ad.find(filter).sort({ createdAt: -1 });
+    var ads = await Ad.find(filter).sort({ createdAt: -1 }); 
     return res.json({ success: true, count: ads.length, ads: ads });
   } catch (err) {
     console.error('[Ad] getAllAds:', err.message);

@@ -37,6 +37,12 @@ router.delete(
   ctrl.deleteProduct
 );
 
+router.put(
+  '/products/:productId',
+  protect,
+  ctrl.updateProduct
+);
+
 // GET /api/vendors
 router.get('/', ctrl.getAllVendors);
 

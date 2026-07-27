@@ -326,15 +326,13 @@ const deleteProduct = async function (req, res) {
       return res.status(404).json({ success: false, message: 'Product not found.' });
     }
 
-    vendor.products.splice(idx, 1);
-    await vendor.save();
-
-    return res.json({ success: true, message: 'Product deleted.', total: vendor.products.length });
-  } catch (err) {
-    console.error('[Vendor] deleteProduct:', err.message);
-    return res.status(500).json({ success: false, message: err.message });
-  }
-};
+    return '<div class="vendor-card" style="text-align:center;padding-top:20px;">' +
+          '<div style="width:84px;height:84px;border-radius:50%;overflow:hidden;margin:0 auto 12px;' +
+          'border:3px solid #f0f2f7;box-shadow:0 2px 10px rgba(0,0,0,0.08);">' +
+          '<img src="' + img + '" alt="' + v.bizName + '" style="width:100%;height:100%;object-fit:cover;display:block;" ' +
+          'onerror="this.src=\'https://via.placeholder.com/150?text=Vendor\'"/>' +
+          '</div>' +
+          '<div class="vendor-info">' +
 
 // ================================================
 //   GET VENDOR BY ID - Public
@@ -611,6 +609,7 @@ module.exports = {
   registerVendor,
   addProduct,
   deleteProduct,
+  updateProduct,
   getVendorById,
   uploadProfilePicture,
   updateVendorProfile,
