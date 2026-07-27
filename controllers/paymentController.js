@@ -388,10 +388,10 @@ async function creditAmbassadorReferral(refCode, vendorId, bizName) {
       console.log('[Payment] Referral code not found:', refCode);
       return;
     }
-    amb.referrals.push({ vendorId: vendorId, vendorName: bizName, commission: 500 });
-    amb.earnings += 500;
+    amb.referrals.push({ vendorId: vendorId, vendorName: bizName, commission: 2000 });
+    amb.earnings += 2000;
     await amb.save();
-    console.log('[Payment] ✅ Ambassador credited:', amb.fullName, '| ₦500');
+    console.log('[Payment] ✅ Ambassador credited:', amb.fullName, '| ₦2000');
   } catch (err) {
     console.error('[Payment] creditAmbassadorReferral:', err.message);
   }
