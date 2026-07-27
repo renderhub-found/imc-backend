@@ -326,13 +326,57 @@ const deleteProduct = async function (req, res) {
       return res.status(404).json({ success: false, message: 'Product not found.' });
     }
 
-    return '<div class="vendor-card" style="text-align:center;padding-top:20px;">' +
-          '<div style="width:84px;height:84px;border-radius:50%;overflow:hidden;margin:0 auto 12px;' +
-          'border:3px solid #f0f2f7;box-shadow:0 2px 10px rgba(0,0,0,0.08);">' +
-          '<img src="' + img + '" alt="' + v.bizName + '" style="width:100%;height:100%;object-fit:cover;display:block;" ' +
-          'onerror="this.src=\'https://via.placeholder.com/150?text=Vendor\'"/>' +
-          '</div>' +
-          '<div class="vendor-info">' +
+    vendor.products.splice(idx, 1);
+    await vendor.save();
+
+    return res.json({ success: true, message: 'Product deleted.', total: vendor.products.length });
+  } catch (err) {
+    console.error('[Vendor] deleteProduct:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ================================================
+//   UPDATE PRODUCT - Protected
+//   PUT /api/vendors/products/:productId
+// ================================================
+
+const updateProduct = async function (req, res) {
+  try {
+    var vendor = await Vendor.findOne({ user: req.user._id });
+    if (!vendor) {
+      return res.status(404).json({ success: false, message: 'Vendor not found.' });
+    }
+
+    var product = vendor.products.find(function (p) {
+      return p._id.toString() === req.params.productId;
+    });
+
+    if (!product) {
+      return res.status(404).json({ success: false, message: 'Product not found.' });
+    }
+
+    if (vendor.subscriptionExpiresAt && new Date(vendor.subscriptionExpiresAt) < new Date()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your vendor subscription has expired. Please renew to edit products.',
+        subscriptionExpired: true
+      });
+    }
+
+    if (req.body.name        !== undefined) product.name        = req.body.name.trim();
+    if (req.body.price       !== undefined) product.price       = parseFloat(req.body.price) || product.price;
+    if (req.body.description !== undefined) product.description = req.body.description.trim();
+    if (req.body.category    !== undefined) product.category    = req.body.category.trim();
+
+    await vendor.save();
+
+    return res.json({ success: true, message: 'Product updated.', product: product });
+  } catch (err) {
+    console.error('[Vendor] updateProduct:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
 
 // ================================================
 //   GET VENDOR BY ID - Public

@@ -208,7 +208,8 @@ async function createEvent(req, res) {
 
     var event = await Event.create({
       organizer:      req.user._id,
-      organizerName:  (req.user.firstName || '') + ' ' + (req.user.lastName || ''),
+      organizerName:  (req.body.organizerName || '').trim() ||
+                      ((req.user.firstName || '') + ' ' + (req.user.lastName || '')),
       organizerEmail: req.user.email,
       title, description, university, location,
       eventDate:   new Date(eventDate),
@@ -407,17 +408,15 @@ async function purchaseTicket(req, res) {
       console.error('[Ticket] Confirmation email failed:', err.message);
     });
 
-    return res.json({
-      success: true,
-      message: 'Ticket purchased successfully!',
-      ticket: {
-        ticketCode: ticket.ticketCode,
-        qrData:     ticket.qrData,
-        eventTitle: event.title,
-        ticketType: ticketType.name,
-        buyerName:  ticket.buyerName
-      }
-    });
+    var { createNotification } = require('./notificationController');
+    createNotification(
+      event.organizer, 'general',
+      'New Ticket Sold! 🎟️',
+      (req.user.firstName || 'A student') + ' bought a ' + ticketType.name + ' ticket for "' + event.title + '".',
+      'event-dashboard.html', '🎟️'
+    );
+
+    return res.json({ success: true, ticketCode: ticketCode, qrImage: qrImage });
   } catch (err) {
     console.error('[Ticket] Purchase error:', err.message);
     return res.status(500).json({ success: false, message: err.message });
