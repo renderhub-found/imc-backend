@@ -689,7 +689,6 @@ router.get('/withdrawals', async function (req, res) {
     return res.status(500).json({ success: false, message: err.message });
   }
 });
-
 router.put('/withdrawals/:ambId/:withdrawalId', async function (req, res) {
   try {
     var allowed = ['pending','approved','paid','rejected'];
@@ -713,6 +712,90 @@ router.put('/withdrawals/:ambId/:withdrawalId', async function (req, res) {
     return res.json({ success: true, message: 'Withdrawal ' + status + '.' });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ================================================
+//   EVENT ORGANIZER WITHDRAWALS
+// ================================================
+
+router.get('/event-withdrawals', async function (req, res) {
+  try {
+    var events = await Event.find({
+      'wallet.withdrawals.0': { $exists: true }
+    }).select('title organizerName organizerEmail wallet');
+
+    var all = [];
+    events.forEach(function (e) {
+      e.wallet.withdrawals.forEach(function (w) {
+        all.push({
+          _id:          w._id,
+          eventId:      e._id,
+          eventTitle:   e.title,
+          organizerName:  e.organizerName,
+          organizerEmail: e.organizerEmail,
+          accountName:  w.accountName,
+          bankName:     w.bankName,
+          accountNum:   w.accountNum,
+          amount:       w.amount,
+          status:       w.status,
+          date:         w.requestedAt
+        });
+      });
+    });
+
+    all.sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
+
+    return res.json({ success: true, count: all.length, withdrawals: all });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.put('/event-withdrawals/:eventId/:withdrawalId', async function (req, res) {
+  try {
+    var allowed = ['pending','approved','paid','rejected'];
+    var status  = req.body.status || '';
+    if (!allowed.includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid status.' });
+    }
+
+    var event = await Event.findById(req.params.eventId);
+    if (!event) return res.status(404).json({ success: false, message: 'Event not found.' });
+
+    var w = event.wallet.withdrawals.id(req.params.withdrawalId);
+    if (!w) return res.status(404).json({ success: false, message: 'Withdrawal not found.' });
+
+    w.status = status;
+    await event.save();
+
+    await auditLog(req, 'UPDATE_EVENT_WITHDRAWAL', 'Withdrawal',
+      req.params.withdrawalId, event.title + ' ₦' + w.amount + ' → ' + status);
+
+    if (status === 'paid') {
+      var emailService = require('../utils/emailService');
+      emailService.sendEmail({
+        to:      event.organizerEmail,
+        subject: 'Withdrawal Paid — Inside My Campus',
+        html:    '<p>Hi ' + event.organizerName + ',</p><p>Your withdrawal request of ₦' +
+                 w.amount.toLocaleString() + ' for "' + event.title + '" has been paid.</p>'
+      }).catch(function (err) {
+        console.error('[Event Withdrawal] Email failed:', err.message);
+      });
+
+      var { createNotification } = require('../controllers/notificationController');
+      createNotification(
+        event.organizer, 'withdrawal_update',
+        'Withdrawal Paid 💰',
+        'Your ₦' + w.amount.toLocaleString() + ' withdrawal for "' + event.title + '" has been paid.',
+        'event-dashboard.html', '💰'
+      );
+    }
+
+    return res.json({ success: true, message: 'Withdrawal ' + status + '.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+
   }
 });
 
