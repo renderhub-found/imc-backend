@@ -69,6 +69,26 @@ router.get('/stats', async function (req, res) {
       : [];
     var adRevenue = adRevenueDocs.reduce(function (s, a) { return s + (a.price || 0); }, 0);
 
+    var ticketEvents = await Event.find({}).select('purchases');
+    var eventTicketRevenue = 0;
+    var totalTicketsSold   = 0;
+    ticketEvents.forEach(function (e) {
+      totalTicketsSold += (e.purchases || []).length;
+      (e.purchases || []).forEach(function (p) {
+        eventTicketRevenue += (p.amountPaid || 0);
+      });
+    });
+
+    var coursesWithPurchases = Course_model ? await Course_model.find({}).select('purchases') : [];
+    var courseRevenue = 0;
+    var totalCourseSales = 0;
+    coursesWithPurchases.forEach(function (c) {
+      totalCourseSales += (c.purchases || []).length;
+      (c.purchases || []).forEach(function (p) {
+        courseRevenue += (p.amount || 0);
+      });
+    });
+
     // Pending ambassador withdrawals
     var ambassadors        = await Ambassador.find();
     var pendingWithdrawals = 0;
@@ -93,10 +113,14 @@ router.get('/stats', async function (req, res) {
         totalAds,
         pendingAds,
         pendingWithdrawals,
+        totalTicketsSold: totalTicketsSold,
+        totalCourseSales: totalCourseSales,
         revenue: {
-          vendors: vendorRevenue,
-          ads:     adRevenue,
-          total:   vendorRevenue + adRevenue
+          vendors:      vendorRevenue,
+          ads:          adRevenue,
+          eventTickets: eventTicketRevenue,
+          courses:      courseRevenue,
+          total:        vendorRevenue + adRevenue + eventTicketRevenue + courseRevenue
         }
       }
     });
