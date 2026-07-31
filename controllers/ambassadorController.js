@@ -2,8 +2,61 @@
 
 var Ambassador = require('../models/Ambassador');
 var User       = require('../models/User');
+var { uploadToCloudinary } = require('../middleware/upload');
 
 console.log('[ambassadorController] Loaded');
+
+// ================================================
+//   UPDATE MY AMBASSADOR PROFILE - Protected
+//   PUT /api/ambassadors/profile
+// ================================================
+async function updateMyProfile(req, res) {
+  try {
+    var amb = await Ambassador.findOne({ user: req.user._id });
+    if (!amb) {
+      return res.status(404).json({ success: false, message: 'Ambassador profile not found.' });
+    }
+
+    if (req.body.fullName)   amb.fullName   = req.body.fullName.trim();
+    if (req.body.university) amb.university = req.body.university.trim();
+    if (req.body.department !== undefined) amb.department = req.body.department.trim();
+    if (req.body.whatsApp)   amb.whatsApp   = req.body.whatsApp.trim();
+    if (req.body.phone !== undefined) amb.phone = req.body.phone.trim();
+    if (req.body.social !== undefined) amb.social = req.body.social.trim();
+
+    await amb.save();
+
+    return res.json({ success: true, message: 'Profile updated.', ambassador: amb });
+  } catch (err) {
+    console.error('[Ambassador] updateMyProfile:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+// ================================================
+//   UPLOAD MY AMBASSADOR PROFILE PICTURE - Protected
+//   PUT /api/ambassadors/profile-picture
+// ================================================
+async function uploadMyProfilePicture(req, res) {
+  try {
+    var amb = await Ambassador.findOne({ user: req.user._id });
+    if (!amb) {
+      return res.status(404).json({ success: false, message: 'Ambassador profile not found.' });
+    }
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No image file provided.' });
+    }
+
+    var result = await uploadToCloudinary(req.file.buffer, 'imc/ambassadors', 'image');
+    amb.profilePicture = result.secure_url;
+    await amb.save();
+
+    return res.json({ success: true, message: 'Profile picture updated!', profilePicture: amb.profilePicture });
+  } catch (err) {
+    console.error('[Ambassador] uploadMyProfilePicture:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+}
 
 async function registerAmbassador(req, res) {
   try {
@@ -245,5 +298,7 @@ module.exports = {
   getAllAmbassadors:   getAllAmbassadors,
   requestWithdrawal:  requestWithdrawal,
   claimTaskReward:    claimTaskReward,
-  getMyWithdrawals:   getMyWithdrawals
+  getMyWithdrawals:   getMyWithdrawals,
+  updateMyProfile:    updateMyProfile,
+  uploadMyProfilePicture: uploadMyProfilePicture
 };
