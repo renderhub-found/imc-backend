@@ -396,6 +396,49 @@ async function processPayment(type, reference, user, amount, metadata) {
     };
   }
 
+  // ---- EVENT TICKET ----
+  if (type === 'event_ticket') {
+    var Event = require('../models/Event');
+    var { issueTicketForPurchase } = require('./eventController');
+
+    var eventId      = metadata.eventId;
+    var ticketTypeId = metadata.ticketTypeId;
+
+    if (!eventId || !ticketTypeId) {
+      console.log('[Payment] event_ticket missing eventId/ticketTypeId in metadata');
+      return { updated: 'none', reason: 'eventId or ticketTypeId missing from metadata' };
+    }
+
+    var ev = await Event.findById(eventId);
+    if (!ev) {
+      return { updated: 'none', reason: 'event not found' };
+    }
+
+    var tType = ev.ticketTypes.id(ticketTypeId);
+    if (!tType) {
+      return { updated: 'none', reason: 'ticket type not found' };
+    }
+
+    var issueResult = await issueTicketForPurchase(ev, tType, user, reference);
+
+    if (issueResult.error) {
+      console.log('[Payment] event_ticket issue failed:', issueResult.error);
+      return { updated: 'none', reason: issueResult.error };
+    }
+
+    var ticketOut = issueResult.alreadyIssued
+      ? { ticketCode: issueResult.ticketCode }
+      : issueResult.ticket;
+
+    console.log('[Payment] ✅ Event ticket issued via payment verify:', ticketOut.ticketCode);
+
+    return {
+      updated:     'event_ticket',
+      ticket:      ticketOut,
+      redirectUrl: 'event-details.html?id=' + eventId
+    };
+  }
+
   console.log('[Payment] Unknown type:', type);
   return { updated: 'none', type: type };
 }
