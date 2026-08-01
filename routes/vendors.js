@@ -40,6 +40,10 @@ router.delete(
 router.put(
   '/products/:productId',
   protect,
+  uploadMedia.fields([
+    { name: 'images', maxCount: 4 },
+    { name: 'video', maxCount: 1 }
+  ]),
   ctrl.updateProduct
 );
 

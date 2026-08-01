@@ -368,6 +368,28 @@ const updateProduct = async function (req, res) {
     if (req.body.price       !== undefined) product.price       = parseFloat(req.body.price) || product.price;
     if (req.body.description !== undefined) product.description = req.body.description.trim();
     if (req.body.category    !== undefined) product.category    = req.body.category.trim();
+    if (req.body.stock       !== undefined) product.stock       = parseInt(req.body.stock) || 0;
+    if (req.body.status      !== undefined && ['active', 'inactive'].indexOf(req.body.status) !== -1) {
+      product.status = req.body.status;
+    }
+
+    // Replace images only if new ones were uploaded — otherwise keep existing.
+    if (req.files && req.files.images && req.files.images.length > 0) {
+      var filesToUpload = req.files.images.slice(0, 4);
+      var uploadResults = await Promise.all(
+        filesToUpload.map(function (f) {
+          return uploadToCloudinary(f.buffer, 'imc/products', 'image');
+        })
+      );
+      var newImages = uploadResults.map(function (r) { return r.secure_url; });
+      product.images = newImages;
+      product.image  = newImages[0];
+    }
+
+    if (req.files && req.files.video && req.files.video[0]) {
+      var vidRes = await uploadToCloudinary(req.files.video[0].buffer, 'imc/products', 'video');
+      product.video = vidRes.secure_url;
+    }
 
     await vendor.save();
 
@@ -437,6 +459,7 @@ async function updateVendorProfile(req, res) {
 
     var updates = {};
     if (req.body.bizName)        updates.bizName        = req.body.bizName.trim();
+    if (req.body.email)          updates.email          = req.body.email.trim();
     if (req.body.description)    updates.description    = req.body.description.trim();
     if (req.body.whatsApp)       updates.whatsApp       = req.body.whatsApp.trim();
     if (req.body.phone)          updates.phone          = req.body.phone.trim();
