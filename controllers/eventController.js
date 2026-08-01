@@ -545,6 +545,34 @@ async function requestWithdrawal(req, res) {
     event.wallet.balance = balance - amount;
     await event.save();
 
+    // Notify + email the organizer that their request was received.
+    var { createNotification } = require('./notificationController');
+    createNotification(
+      event.organizer, 'withdrawal_requested',
+      'Withdrawal Request Received',
+      'Your ₦' + amount.toLocaleString() + ' withdrawal request for "' + event.title + '" has been submitted and is pending review.',
+      'event-dashboard.html', '💸'
+    );
+
+    var emailService = require('../utils/emailService');
+    emailService.sendEmail({
+      to:      event.organizerEmail,
+      subject: 'Withdrawal Request Received — Inside My Campus',
+      html:    '<p>Hi ' + event.organizerName + ',</p><p>We received your withdrawal request of ₦' +
+               amount.toLocaleString() + ' for "' + event.title + '". We will process it within 48 hours.</p>'
+    }).catch(function (err) {
+      console.error('[Event Withdrawal] Confirmation email failed:', err.message);
+    });
+
+    // Notify admin (email + shows in the unfiltered admin notification feed).
+    emailService.sendAdminNotification(
+      'New Event Withdrawal Request',
+      event.organizerName + ' (' + event.organizerEmail + ') requested ₦' + amount.toLocaleString() +
+      ' from "' + event.title + '".\nBank: ' + bankName + ' — ' + accountName + ' — ' + accountNum
+    ).catch(function (err) {
+      console.error('[Event Withdrawal] Admin email failed:', err.message);
+    });
+
     return res.json({ success: true, message: 'Withdrawal request submitted!' });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
