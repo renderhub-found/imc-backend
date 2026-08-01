@@ -43,7 +43,7 @@ const getAllVendors = async function (req, res) {
 const getAllProducts = async function (req, res) {
   try {
     var vendors = await Vendor.find({ status: 'approved' })
-      .select('bizName university category products profilePicture');
+      .select('bizName university category products profilePicture whatsApp phone');
 
     var all = [];
     vendors.forEach(function (v) {
@@ -669,6 +669,29 @@ const rateVendor = async function (req, res) {
 };
 
 
+// ================================================
+//   LOG WHATSAPP ENGAGEMENT
+//   POST /api/vendors/:id/whatsapp-click
+//   Public - fires when a customer opens WhatsApp from
+//   the product page "Chat Vendor" button or the vendor
+//   profile "Chat on WhatsApp" button.
+// ================================================
+
+const logWhatsAppClick = async function (req, res) {
+  try {
+    var vendor = await Vendor.findById(req.params.id);
+    if (!vendor) {
+      return res.status(404).json({ success: false, message: 'Vendor not found.' });
+    }
+    vendor.whatsappClicks = (vendor.whatsappClicks || 0) + 1;
+    await vendor.save();
+    return res.status(200).json({ success: true, whatsappClicks: vendor.whatsappClicks });
+  } catch (err) {
+    console.error('Log WhatsApp click error:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   getAllVendors,
   getMyVendorProfile,
@@ -682,5 +705,6 @@ module.exports = {
   updateVendorProfile,
   logProductLead,
   logProductClick,
+  logWhatsAppClick,
   rateVendor
-};   
+};

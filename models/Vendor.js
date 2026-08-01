@@ -62,6 +62,7 @@ const VendorSchema = new mongoose.Schema({
   refCode:       { type: String, default: '' },
   products:      [ProductSchema],
   profileViews:  { type: Number, default: 0 },
+  whatsappClicks: { type: Number, default: 0 },
   subscriptionExpiresAt: { type: Date, default: null },
   ratings: [{
     user:      { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

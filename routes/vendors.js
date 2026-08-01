@@ -94,6 +94,7 @@ router.put(
 
 router.post('/products/:productId/lead',  ctrl.logProductLead);
 router.post('/products/:productId/click', ctrl.logProductClick);
+router.post('/:id/whatsapp-click', ctrl.logWhatsAppClick);
 router.post('/:id/rate', protect, ctrl.rateVendor);
 
 // =============================================
