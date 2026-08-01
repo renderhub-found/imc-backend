@@ -2,29 +2,47 @@
 
 var mongoose = require('mongoose');
 
-var PurchaseSchema = new mongoose.Schema({
-  buyer:      { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  buyerEmail: { type: String, required: true },
-  buyerName:  { type: String, default: '' },
-  ticketId:   { type: String, required: true }, // unique generated ID
-  qrCode:     { type: String, default: '' },
-  paymentRef: { type: String, default: '' },
-  paidAt:     { type: Date,   default: Date.now }
-});
-
+// One document per issued ticket — this is what eventController.js's
+// issueTicketForPurchase() actually creates on every free/paid purchase,
+// and what verifyTicket() looks up during door check-in via ticketCode.
+// (The previous schema here modeled a completely different "ticket type
+// with embedded purchases" shape that nothing in the codebase used —
+// every Ticket.create() call was failing Mongoose validation because
+// required fields like name/price/quantity/remaining were never passed,
+// which is the exact "Ticket validation failed" error from Priority 2.)
 var TicketSchema = new mongoose.Schema({
   event: {
     type:     mongoose.Schema.Types.ObjectId,
     ref:      'Event',
     required: true
   },
-  name:        { type: String, required: true },
-  description: { type: String, default: '' },
-  price:       { type: Number, required: true, min: 0 },
-  isFree:      { type: Boolean, default: false },
-  quantity:    { type: Number, required: true, min: 1 },
-  remaining:   { type: Number, required: true },
-  purchases:   [PurchaseSchema]
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref:  'User'
+  },
+  ticketTypeId: {
+    type: mongoose.Schema.Types.ObjectId
+  },
+  buyerName:  { type: String, default: '' },
+  buyerEmail: { type: String, required: true },
+  ticketCode: {
+    type:     String,
+    required: true,
+    unique:   true,
+    uppercase: true
+  },
+  qrData:     { type: String, default: '' },
+  status: {
+    type:    String,
+    enum:    ['valid', 'used'],
+    default: 'valid'
+  },
+  checkedInAt: { type: Date },
+  checkedInBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref:  'User'
+  },
+  paymentRef: { type: String, default: '' }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Ticket', TicketSchema);
