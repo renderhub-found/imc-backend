@@ -279,6 +279,16 @@ async function deleteEvent(req, res) {
 // ================================================
 //   PURCHASE TICKET — Protected
 // ================================================
+
+// ================================================
+//   ISSUE TICKET — shared by purchaseTicket (free tickets,
+//   called directly from the frontend) and processPayment in
+//   paymentController.js (paid tickets, called after Paystack
+//   verification/webhook). Keeping this in one place means both
+//   paths always create the Ticket, generate the QR, decrement
+//   stock, credit the wallet, and send the Resend email the
+//   same way.
+// ================================================
 async function issueTicketForPurchase(event, ticketType, buyer, paymentRef) {
   var alreadyBought = event.purchases.find(function (p) {
     return p.buyerEmail === buyer.email &&
@@ -302,6 +312,7 @@ async function issueTicketForPurchase(event, ticketType, buyer, paymentRef) {
   }
 
   var ticketCode = 'IMC-EVT-' + crypto.randomBytes(6).toString('hex').toUpperCase();
+
   var commission  = event.commission || 10;
   var amountPaid  = ticketType.price;
   var platformCut = Math.round(amountPaid * commission / 100);
@@ -309,9 +320,14 @@ async function issueTicketForPurchase(event, ticketType, buyer, paymentRef) {
   var buyerName   = (buyer.firstName || '') + ' ' + (buyer.lastName || '');
 
   event.purchases.push({
-    buyer: buyer._id, buyerEmail: buyer.email, buyerName: buyerName,
-    ticketTypeId: ticketType._id, ticketTypeName: ticketType.name,
-    ticketCode: ticketCode, paymentRef: paymentRef || '', amountPaid: amountPaid
+    buyer:          buyer._id,
+    buyerEmail:     buyer.email,
+    buyerName:      buyerName,
+    ticketTypeId:   ticketType._id,
+    ticketTypeName: ticketType.name,
+    ticketCode:     ticketCode,
+    paymentRef:     paymentRef || '',
+    amountPaid:     amountPaid
   });
 
   ticketType.remaining = Math.max(0, ticketType.remaining - 1);
@@ -328,33 +344,49 @@ async function issueTicketForPurchase(event, ticketType, buyer, paymentRef) {
   var qrImage   = await QRCode.toDataURL(qrPayload);
 
   await Ticket.create({
-    event: event._id, user: buyer._id, ticketTypeId: ticketType._id,
-    buyerName: buyerName, buyerEmail: buyer.email, ticketCode: ticketCode,
-    qrData: qrImage, status: 'valid', paymentRef: paymentRef || ''
+    event:        event._id,
+    user:         buyer._id,
+    ticketTypeId: ticketType._id,
+    buyerName:    buyerName,
+    buyerEmail:   buyer.email,
+    ticketCode:   ticketCode,
+    qrData:       qrImage,
+    status:       'valid',
+    paymentRef:   paymentRef || ''
   });
 
   console.log('[Ticket] ✅ Issued:', ticketCode, '| buyer:', buyer.email);
 
   sendTicketConfirmation(buyer.email, buyer.firstName || 'there', {
-    eventTitle: event.title, eventDate: event.eventDate.toDateString(),
-    eventTime: event.eventTime, location: event.location,
-    ticketType: ticketType.name, ticketCode: ticketCode, qrImage: qrImage
+    eventTitle: event.title,
+    eventDate:  event.eventDate.toDateString(),
+    eventTime:  event.eventTime,
+    location:   event.location,
+    ticketType: ticketType.name,
+    ticketCode: ticketCode,
+    qrImage:    qrImage
   }).catch(function (err) {
     console.error('[Ticket] Confirmation email failed:', err.message);
   });
 
   var { createNotification } = require('./notificationController');
   createNotification(
-    event.organizer, 'general', 'New Ticket Sold! 🎟️',
+    event.organizer, 'general',
+    'New Ticket Sold! 🎟️',
     (buyer.firstName || 'A student') + ' bought a ' + ticketType.name + ' ticket for "' + event.title + '".',
     'event-dashboard.html', '🎟️'
   );
 
   return {
     ticket: {
-      ticketCode: ticketCode, qrData: qrImage, eventTitle: event.title,
-      eventDate: event.eventDate.toDateString(), eventTime: event.eventTime,
-      location: event.location, ticketType: ticketType.name, isFree: amountPaid === 0
+      ticketCode: ticketCode,
+      qrData:     qrImage,
+      eventTitle: event.title,
+      eventDate:  event.eventDate.toDateString(),
+      eventTime:  event.eventTime,
+      location:   event.location,
+      ticketType: ticketType.name,
+      isFree:     amountPaid === 0
     }
   };
 }
@@ -365,73 +397,6 @@ async function purchaseTicket(req, res) {
     if (!event) {
       return res.status(404).json({ success: false, message: 'Event not found.' });
     }
-
-    var ticketTypeId = req.params.ticketTypeId;
-    var ticketType   = event.ticketTypes.id(ticketTypeId);
-
-    if (!ticketType) {
-      return res.status(404).json({ success: false, message: 'Ticket type not found.' });
-    }
-
-    if (ticketType.remaining <= 0) {
-      return res.status(400).json({ success: false, message: 'Tickets sold out.' });
-    }
-
-    var alreadyBought = event.purchases.find(function (p) {
-      return p.buyerEmail === req.user.email &&
-             p.ticketTypeId.toString() === ticketTypeId;
-    });
-
-    if (alreadyBought) {
-      return res.status(400).json({
-        success: false, message: 'You already have this ticket.', ticketCode: alreadyBought.ticketCode
-      });
-    }
-
-    var paymentRef = (req.body.paymentRef || '').trim();
-    var isPaidTicket = !ticketType.isFree && ticketType.price > 0;
-
-    if (isPaidTicket && !paymentRef) {
-      return res.status(400).json({ success: false, message: 'Payment reference required for paid tickets.' });
-    }
-
-    if (isPaidTicket) {
-      var verifyResult;
-      try {
-        verifyResult = await verifyPaystackRef(paymentRef);
-      } catch (err) {
-        return res.status(502).json({ success: false, message: 'Could not verify payment: ' + err.message });
-      }
-
-      var tx = verifyResult && verifyResult.data;
-      if (!verifyResult || !verifyResult.status || !tx || tx.status !== 'success') {
-        return res.status(400).json({ success: false, message: 'Payment could not be verified.' });
-      }
-
-      var expectedKobo = Math.round(ticketType.price * 100);
-      if (tx.amount < expectedKobo) {
-        return res.status(400).json({ success: false, message: 'Amount paid does not match ticket price.' });
-      }
-    }
-
-    var issueResult = await issueTicketForPurchase(event, ticketType, req.user, paymentRef);
-
-    if (issueResult.error) {
-      return res.status(400).json({ success: false, message: issueResult.error });
-    }
-    if (issueResult.alreadyIssued) {
-      return res.status(400).json({
-        success: false, message: 'You already have this ticket.', ticketCode: issueResult.ticketCode
-      });
-    }
-
-    return res.json({
-      success: true,
-      ticketCode: issueResult.ticket.ticketCode,
-      qrImage: issueResult.ticket.qrData,
-      ticket: issueResult.ticket
-    });
-  } catch (err) {
 
     var ticketTypeId = req.params.ticketTypeId;
     var ticketType   = event.ticketTypes.id(ticketTypeId);
@@ -484,85 +449,27 @@ async function purchaseTicket(req, res) {
       if (tx.amount < expectedKobo) {
         return res.status(400).json({ success: false, message: 'Amount paid does not match ticket price.' });
       }
+    }
 
-      var alreadyUsedRef = event.purchases.find(function (p) {
-        return p.paymentRef === paymentRef;
+    var issueResult = await issueTicketForPurchase(event, ticketType, req.user, paymentRef);
+
+    if (issueResult.error) {
+      return res.status(400).json({ success: false, message: issueResult.error });
+    }
+    if (issueResult.alreadyIssued) {
+      return res.status(400).json({
+        success:    false,
+        message:    'You already have this ticket.',
+        ticketCode: issueResult.ticketCode
       });
-      if (alreadyUsedRef) {
-        return res.status(400).json({ success: false, message: 'This payment reference has already been used.' });
-      }
     }
 
-    var ticketCode = 'IMC-EVT-' + crypto.randomBytes(6).toString('hex').toUpperCase();
-
-    var commission  = event.commission || 10;
-    var amountPaid  = ticketType.price;
-    var platformCut = Math.round(amountPaid * commission / 100);
-    var creatorEarn = amountPaid - platformCut;
-
-    event.purchases.push({
-      buyer:          req.user._id,
-      buyerEmail:     req.user.email,
-      buyerName:      (req.user.firstName || '') + ' ' + (req.user.lastName || ''),
-      ticketTypeId:   ticketTypeId,
-      ticketTypeName: ticketType.name,
-      ticketCode:     ticketCode,
-      paymentRef:     paymentRef,
-      amountPaid:     amountPaid
+    return res.json({
+      success: true,
+      ticketCode: issueResult.ticket.ticketCode,
+      qrImage: issueResult.ticket.qrData,
+      ticket: issueResult.ticket
     });
-
-    ticketType.remaining = Math.max(0, ticketType.remaining - 1);
-
-    if (creatorEarn > 0) {
-      if (!event.wallet) event.wallet = { balance: 0, totalEarned: 0 };
-      event.wallet.balance     = (event.wallet.balance     || 0) + creatorEarn;
-      event.wallet.totalEarned = (event.wallet.totalEarned || 0) + creatorEarn;
-    }
-
-    await event.save();
-
-    // Generate QR code
-    var qrPayload = JSON.stringify({ ticketCode: ticketCode, eventId: event._id.toString() });
-    var qrImage   = await QRCode.toDataURL(qrPayload);
-
-    // Save Ticket document
-    var ticket = await Ticket.create({
-      event:        event._id,
-      user:         req.user._id,
-      ticketTypeId: ticketTypeId,
-      buyerName:    (req.user.firstName || '') + ' ' + (req.user.lastName || ''),
-      buyerEmail:   req.user.email,
-      ticketCode:   ticketCode,
-      qrData:       qrImage,
-      status:       'valid',
-      paymentRef:   paymentRef
-    });
-
-    console.log('[Ticket] ✅ Purchased:', ticketCode, '| buyer:', req.user.email);
-
-    // Send confirmation email — fire and forget so a slow/failed email
-    // never blocks or fails the purchase itself.
-    sendTicketConfirmation(req.user.email, req.user.firstName || 'there', {
-      eventTitle: event.title,
-      eventDate:  event.eventDate.toDateString(),
-      eventTime:  event.eventTime,
-      location:   event.location,
-      ticketType: ticketType.name,
-      ticketCode: ticketCode,
-      qrImage:    qrImage
-    }).catch(function (err) {
-      console.error('[Ticket] Confirmation email failed:', err.message);
-    });
-
-    var { createNotification } = require('./notificationController');
-    createNotification(
-      event.organizer, 'general',
-      'New Ticket Sold! 🎟️',
-      (req.user.firstName || 'A student') + ' bought a ' + ticketType.name + ' ticket for "' + event.title + '".',
-      'event-dashboard.html', '🎟️'
-    );
-
-    return res.json({ success: true, ticketCode: ticketCode, qrImage: qrImage });
   } catch (err) {
     console.error('[Ticket] Purchase error:', err.message);
     return res.status(500).json({ success: false, message: err.message });

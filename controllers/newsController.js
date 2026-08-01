@@ -81,8 +81,8 @@ const submitNews = async function (req, res) {
       title:       title,
       university:  university,
       content:     content,
-      image:       image,
-      video:       video,
+      image:       imageUrl,
+      video:       videoUrl,
       tags:        [university],
       status:      isAdmin ? 'approved' : 'pending',
       pinned:      req.body.pinned === true
