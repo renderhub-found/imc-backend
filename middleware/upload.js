@@ -28,6 +28,25 @@ const mediaFilter = function (req, file, cb) {
   }
 };
 
+// Learning Hub materials: PDFs/docs for the main file, images for the cover.
+const materialFilter = function (req, file, cb) {
+  var allowed = [
+    'image/', 'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+  ];
+  var ok = allowed.some(function (prefix) {
+    return file.mimetype.indexOf(prefix) === 0;
+  });
+  if (ok) {
+    cb(null, true);
+  } else {
+    cb(new Error('Only PDF, Word, PowerPoint, or image files are allowed.'), false);
+  }
+};
+
 const uploadImage = multer({
   storage:   storage,
   fileFilter: imageFilter,
@@ -38,6 +57,12 @@ const uploadMedia = multer({
   storage:    storage,
   fileFilter: mediaFilter,
   limits:     { fileSize: 50 * 1024 * 1024 } // 50MB (covers video)
+});
+
+const uploadMaterial = multer({
+  storage:    storage,
+  fileFilter: materialFilter,
+  limits:     { fileSize: 50 * 1024 * 1024 } // 50MB (covers large PDFs)
 });
 
 // ---- Helper: upload a buffer to Cloudinary ----
@@ -51,5 +76,6 @@ function uploadToCloudinary(fileBuffer, folder, resourceType) {
 module.exports = {
   uploadImage,
   uploadMedia,
+  uploadMaterial,
   uploadToCloudinary
 };

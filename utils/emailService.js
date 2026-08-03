@@ -224,10 +224,29 @@ async function sendTicketConfirmation(email, firstName, details) {
   });
 }
 
+async function sendMaterialPurchaseConfirmation(email, firstName, details) {
+  return sendEmail({
+    to:      email,
+    subject: 'Your Download: ' + details.title + ' — Inside My Campus',
+    html: base(
+      '<p>Hello <strong>' + esc(firstName) + '</strong>,</p>' +
+      '<p>Thanks for your purchase! Your material is ready to download. 📚</p>' +
+      '<div class="hl">' +
+      'Title: <strong>' + esc(details.title) + '</strong><br/>' +
+      'Amount Paid: <strong>₦' + (parseInt(details.amount) || 0).toLocaleString() + '</strong>' +
+      '</div>' +
+      '<p><a href="' + esc(details.fileUrl) + '" style="display:inline-block;margin-top:10px;padding:12px 24px;' +
+      'background:#1a3c8f;color:#fff;text-decoration:none;border-radius:8px;">Download Now</a></p>' +
+      '<p style="font-size:13px;color:#888;margin-top:16px;">You can also find this in "My Purchases" on your Inside My Campus dashboard anytime.</p>'
+    )
+  });
+}
+
 module.exports = {
   sendEmail, verifyTransporter,
   sendPasswordReset, sendWelcome,
   sendVendorConfirmation, sendVendorApproved,
   sendAmbassadorConfirmation, sendPaymentConfirmation,
-  sendAdminNotification, sendTicketConfirmation
+  sendAdminNotification, sendTicketConfirmation,
+  sendMaterialPurchaseConfirmation
 };

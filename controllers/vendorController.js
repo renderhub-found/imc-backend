@@ -48,6 +48,7 @@ const getAllProducts = async function (req, res) {
     var all = [];
     vendors.forEach(function (v) {
       v.products.forEach(function (p) {
+        if (p.status === 'inactive') return;
         var imgs = (p.images && p.images.length > 0) ? p.images : (p.image ? [p.image] : []);
         all.push({
           _id:        p._id,
@@ -58,6 +59,8 @@ const getAllProducts = async function (req, res) {
           images:     imgs,
           video:      p.video,
           category:   p.category || v.category,
+          stock:      p.stock,
+          status:     p.status || 'active',
           vendorId:   v._id,
           vendorName: v.bizName,
           vendorLogo: v.profilePicture || '',

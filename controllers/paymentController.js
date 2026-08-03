@@ -396,6 +396,35 @@ async function processPayment(type, reference, user, amount, metadata) {
     };
   }
 
+  // ---- LEARNING HUB MATERIAL PURCHASE ----
+  if (type === 'learning_material') {
+    var LearningMaterial = require('../models/LearningMaterial');
+    var { grantMaterialAccess } = require('./learningController');
+
+    var materialId = metadata.materialId;
+    if (!materialId) {
+      console.log('[Payment] learning_material missing materialId in metadata');
+      return { updated: 'none', reason: 'materialId missing from metadata' };
+    }
+
+    var material = await LearningMaterial.findById(materialId);
+    if (!material) {
+      console.log('[Payment] Learning material not found:', materialId);
+      return { updated: 'none', reason: 'material not found' };
+    }
+
+    var accessResult = await grantMaterialAccess(material, user, reference);
+
+    console.log('[Payment] ✅ Learning material access granted:', material.title);
+
+    return {
+      updated:     'learning_material',
+      title:       accessResult.title,
+      fileUrl:     accessResult.fileUrl,
+      redirectUrl: 'learning-hub.html?id=' + materialId
+    };
+  }
+
   // ---- EVENT TICKET ----
   if (type === 'event_ticket') {
     var Event = require('../models/Event');
