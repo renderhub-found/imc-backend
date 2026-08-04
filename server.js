@@ -1,4 +1,3 @@
-
 'use strict';
 
 var express  = require('express');
@@ -187,6 +186,7 @@ loadRoute('./routes/ambassadors', '/api/ambassadors');
 loadRoute('./routes/news',        '/api/news');
 loadRoute('./routes/courses',     '/api/courses');
 loadRoute('./routes/learning',    '/api/learning');
+loadRoute('./routes/connect',     '/api/connect');
 // ---- ADMIN ROUTES ----
 console.log('MOUNTING_ADMIN_ROUTES...');
 try {
