@@ -667,7 +667,26 @@ router.get('/payments', async function (req, res) {
                email: a.ownerEmail, amount: a.price, ref: a.paymentRef, date: a.createdAt };
     });
 
-    var all = vendorPayments.concat(adPayments).concat(coursePurchases);
+    var eventTicketPayments = [];
+    var Event_model = mongoose.models.Event || null;
+    if (Event_model) {
+      var eventsWithSales = await Event_model.find({ 'purchases.0': { $exists: true } })
+        .select('title purchases');
+      eventsWithSales.forEach(function (ev) {
+        ev.purchases.forEach(function (p) {
+          eventTicketPayments.push({
+            type:   'Event Ticket',
+            name:   ev.title,
+            email:  p.buyerEmail,
+            amount: p.amountPaid,
+            ref:    p.paymentRef,
+            date:   p.purchasedAt || p.date || ev.createdAt
+          });
+        });
+      });
+    }
+
+    var all = vendorPayments.concat(adPayments).concat(coursePurchases).concat(eventTicketPayments);
     all.sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
 
     var total = all.reduce(function (s, p) { return s + (p.amount || 0); }, 0);
