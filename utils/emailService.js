@@ -213,13 +213,41 @@ async function sendTicketConfirmation(email, firstName, details) {
       'Time: <strong>' + esc(details.eventTime) + '</strong><br/>' +
       'Venue: <strong>' + esc(details.location) + '</strong><br/>' +
       'Ticket Type: <strong>' + esc(details.ticketType) + '</strong><br/>' +
-      'Ticket Code: <code>' + esc(details.ticketCode) + '</code>' +
+      'Quantity: <strong>' + esc(details.ticketQuantity || 1) + '</strong><br/>' +
+      'Ticket ID: <code>' + esc(details.ticketCode) + '</code><br/>' +
+      (details.orderReference
+        ? 'Order Reference: <code>' + esc(details.orderReference) + '</code>'
+        : '') +
       '</div>' +
       '<p>Show your ticket code or QR code at the entrance to check in.</p>' +
       (details.qrImage
         ? '<div style="text-align:center;margin:20px 0;"><img src="' + details.qrImage +
           '" alt="Ticket QR Code" style="width:180px;height:180px;"/></div>'
         : '')
+    )
+  });
+}
+
+async function sendTicketSaleNotification(email, organizerName, details) {
+  return sendEmail({
+    to:      email,
+    subject: 'New Ticket Sold — ' + details.eventTitle + ' — Inside My Campus',
+    html: base(
+      '<p>Hello <strong>' + esc(organizerName) + '</strong>,</p>' +
+      '<p>You just sold a ticket! 🎟️</p>' +
+      '<div class="hl">' +
+      'Event: <strong>' + esc(details.eventTitle) + '</strong><br/>' +
+      'Date: <strong>' + esc(details.eventDate) + '</strong><br/>' +
+      'Location: <strong>' + esc(details.location) + '</strong><br/>' +
+      'Ticket Type: <strong>' + esc(details.ticketType) + '</strong><br/>' +
+      'Quantity: <strong>' + esc(details.ticketQuantity || 1) + '</strong><br/>' +
+      'Buyer: <strong>' + esc(details.buyerName || details.buyerEmail) + '</strong><br/>' +
+      'Ticket ID: <code>' + esc(details.ticketCode) + '</code><br/>' +
+      (details.orderReference
+        ? 'Order Reference: <code>' + esc(details.orderReference) + '</code>'
+        : '') +
+      '</div>' +
+      '<a href="' + (process.env.FRONTEND_URL||'') + '/event-dashboard.html" class="btn">View Dashboard</a>'
     )
   });
 }
@@ -248,5 +276,6 @@ module.exports = {
   sendVendorConfirmation, sendVendorApproved,
   sendAmbassadorConfirmation, sendPaymentConfirmation,
   sendAdminNotification, sendTicketConfirmation,
+  sendTicketSaleNotification,
   sendMaterialPurchaseConfirmation
 };

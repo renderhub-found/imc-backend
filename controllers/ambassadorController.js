@@ -257,47 +257,20 @@ async function requestWithdrawal(req, res) {
   }
 }
 
-async function claimTaskReward(req, res) {
-  try {
-    var ambassador = await Ambassador.findOne({ user: req.user._id });
-    if (!ambassador) {
-      return res.status(404).json({ success: false, message: 'Ambassador not found.' });
-    }
+// claimTaskReward removed — it let the client set `reward` and `taskId`
+// directly with zero verification, so any ambassador could credit
+// themselves arbitrary amounts for tasks they never did. Replaced by the
+// submit/review flow in ambassadorTaskController.js (submitTask +
+// admin reviewSubmission), where the reward amount always comes from the
+// AmbassadorTask record server-side and is only credited on admin approval.
 
-    var taskId = (req.body.taskId || '').trim();
-    var reward = parseInt(req.body.reward) || 0;
-
-    if (!taskId) {
-      return res.status(400).json({ success: false, message: 'Task ID is required.' });
-    }
-    if (ambassador.tasksDone.includes(taskId)) {
-      return res.status(400).json({ success: false, message: 'Task already claimed.' });
-    }
-
-    ambassador.tasksDone.push(taskId);
-    ambassador.earnings += reward;
-    await ambassador.save();
-
-    return res.json({
-      success:   true,
-      message:   '₦' + reward.toLocaleString() + ' reward claimed!',
-      earnings:  ambassador.earnings,
-      tasksDone: ambassador.tasksDone
-    });
-
-  } catch (err) {
-    return res.status(500).json({ success: false, message: err.message });
-  }
-}
-
-console.log('[ambassadorController] Exports ready:', ['registerAmbassador','getMyProfile','getAllAmbassadors','requestWithdrawal','claimTaskReward','getMyWithdrawals']);
+console.log('[ambassadorController] Exports ready:', ['registerAmbassador','getMyProfile','getAllAmbassadors','requestWithdrawal','getMyWithdrawals']);
 
 module.exports = {
   registerAmbassador: registerAmbassador,
   getMyProfile:       getMyProfile,
   getAllAmbassadors:   getAllAmbassadors,
   requestWithdrawal:  requestWithdrawal,
-  claimTaskReward:    claimTaskReward,
   getMyWithdrawals:   getMyWithdrawals,
   updateMyProfile:    updateMyProfile,
   uploadMyProfilePicture: uploadMyProfilePicture

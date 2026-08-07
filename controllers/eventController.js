@@ -6,7 +6,7 @@ var Ticket = require('../models/Ticket');
 var QRCode = require('qrcode');
 var crypto = require('crypto');
 var https  = require('https');
-var { sendTicketConfirmation } = require('../utils/emailService');
+var { sendTicketConfirmation, sendTicketSaleNotification } = require('../utils/emailService');
 
 function verifyPaystackRef(reference) {
   return new Promise(function (resolve, reject) {
@@ -358,16 +358,34 @@ async function issueTicketForPurchase(event, ticketType, buyer, paymentRef) {
   console.log('[Ticket] ✅ Issued:', ticketCode, '| buyer:', buyer.email);
 
   sendTicketConfirmation(buyer.email, buyer.firstName || 'there', {
-    eventTitle: event.title,
-    eventDate:  event.eventDate.toDateString(),
-    eventTime:  event.eventTime,
-    location:   event.location,
-    ticketType: ticketType.name,
-    ticketCode: ticketCode,
-    qrImage:    qrImage
+    eventTitle:     event.title,
+    eventDate:      event.eventDate.toDateString(),
+    eventTime:      event.eventTime,
+    location:       event.location,
+    ticketType:     ticketType.name,
+    ticketQuantity: 1,
+    ticketCode:     ticketCode,
+    orderReference: paymentRef || ticketCode,
+    qrImage:        qrImage
   }).catch(function (err) {
-    console.error('[Ticket] Confirmation email failed:', err.message);
+    console.error('[Ticket] Buyer confirmation email failed:', err.message);
   });
+
+  if (event.organizerEmail) {
+    sendTicketSaleNotification(event.organizerEmail, event.organizerName || 'there', {
+      eventTitle:     event.title,
+      eventDate:      event.eventDate.toDateString(),
+      location:       event.location,
+      ticketType:     ticketType.name,
+      ticketQuantity: 1,
+      buyerName:      buyerName,
+      buyerEmail:     buyer.email,
+      ticketCode:     ticketCode,
+      orderReference: paymentRef || ticketCode
+    }).catch(function (err) {
+      console.error('[Ticket] Organizer notification email failed:', err.message);
+    });
+  }
 
   var { createNotification } = require('./notificationController');
   createNotification(
