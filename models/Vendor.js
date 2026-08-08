@@ -64,6 +64,8 @@ const VendorSchema = new mongoose.Schema({
   profileViews:  { type: Number, default: 0 },
   whatsappClicks: { type: Number, default: 0 },
   subscriptionExpiresAt: { type: Date, default: null },
+  subscriptionPlan:   { type: String, enum: ['6months', '12months'], default: '6months' },
+  subscriptionAmount: { type: Number, default: 0 },
   ratings: [{
     user:      { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     value:     { type: Number, min: 1, max: 5 },

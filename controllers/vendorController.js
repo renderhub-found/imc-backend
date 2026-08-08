@@ -131,6 +131,43 @@ const getMyVendorProfile = async function (req, res) {
 //   POST /api/vendors/register
 // ================================================
 
+const https = require('https');
+
+// Vendor subscription plans — mirrors paymentController.js's VENDOR_PLANS.
+// Duplicated intentionally rather than cross-importing, to keep this
+// controller's own Paystack verification fully self-contained.
+var VENDOR_PLANS = {
+  '6months':  { months: 6,  amount: 5000 },
+  '12months': { months: 12, amount: 8000 }
+};
+function planFromAmount(amountPaid) {
+  if (amountPaid >= VENDOR_PLANS['12months'].amount) return { key: '12months', plan: VENDOR_PLANS['12months'] };
+  return { key: '6months', plan: VENDOR_PLANS['6months'] };
+}
+
+function verifyPaystackReference(reference) {
+  return new Promise(function (resolve, reject) {
+    var options = {
+      hostname: 'api.paystack.co',
+      port:     443,
+      path:     '/transaction/verify/' + encodeURIComponent(reference),
+      method:   'GET',
+      headers:  { 'Authorization': 'Bearer ' + process.env.PAYSTACK_SECRET_KEY }
+    };
+    var req = https.request(options, function (response) {
+      var raw = '';
+      response.on('data', function (c) { raw += c; });
+      response.on('end', function () {
+        try { resolve(JSON.parse(raw)); }
+        catch (e) { reject(new Error('Invalid Paystack response')); }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(30000, function () { req.destroy(); reject(new Error('Paystack timeout')); });
+    req.end();
+  });
+}
+
 const registerVendor = async function (req, res) {
   try {
     console.log('[Vendor] registerVendor - user:', req.user.email);
@@ -148,14 +185,18 @@ const registerVendor = async function (req, res) {
       });
     }
 
-    var fullName    = (req.body.fullName    || '').trim();
-    var bizName     = (req.body.bizName     || '').trim();
-    var university  = (req.body.university  || '').trim();
-    var category    = (req.body.category    || '').trim();
-    var description = (req.body.description || '').trim();
-    var whatsApp    = (req.body.whatsApp    || '').trim();
-    var refCode     = (req.body.refCode     || '').trim();
-    var paymentRef  = (req.body.paymentRef  || '').trim();
+    var fullName       = (req.body.fullName       || '').trim();
+    var bizName        = (req.body.bizName        || '').trim();
+    var university     = (req.body.university     || '').trim();
+    var category       = (req.body.category       || '').trim();
+    var description    = (req.body.description    || '').trim();
+    var whatsApp       = (req.body.whatsApp        || '').trim();
+    var phone          = (req.body.phone           || '').trim();
+    var campusLocation = (req.body.campusLocation  || '').trim();
+    var profilePicture = (req.body.profilePicture  || '').trim();
+    var coverImage     = (req.body.coverImage      || '').trim();
+    var refCode        = (req.body.refCode         || '').trim();
+    var paymentRef     = (req.body.paymentRef      || '').trim();
 
     var missing = [];
     if (!fullName)    missing.push('fullName');
@@ -164,6 +205,7 @@ const registerVendor = async function (req, res) {
     if (!category)    missing.push('category');
     if (!description) missing.push('description');
     if (!whatsApp)    missing.push('whatsApp');
+    if (!paymentRef)  missing.push('paymentRef');
 
     if (missing.length > 0) {
       console.log('[Vendor] Missing fields:', missing);
@@ -172,6 +214,27 @@ const registerVendor = async function (req, res) {
         message: 'Missing required fields: ' + missing.join(', ')
       });
     }
+
+    // Independently verify the payment reference with Paystack — this
+    // endpoint must never trust a client-supplied reference on its own,
+    // regardless of which frontend flow calls it.
+    var pv;
+    try {
+      pv = await verifyPaystackReference(paymentRef);
+    } catch (verifyErr) {
+      console.error('[Vendor] Paystack verify error:', verifyErr.message);
+      return res.status(502).json({ success: false, message: 'Could not verify payment. Please try again.' });
+    }
+
+    if (!pv.status || !pv.data || pv.data.status !== 'success') {
+      console.log('[Vendor] Payment not verified for ref:', paymentRef);
+      return res.status(400).json({ success: false, message: 'Payment could not be verified.' });
+    }
+
+    var amountPaid = pv.data.amount / 100;
+    var resolvedPlan = planFromAmount(amountPaid);
+    var subscriptionExpiresAt = new Date();
+    subscriptionExpiresAt.setMonth(subscriptionExpiresAt.getMonth() + resolvedPlan.plan.months);
 
     console.log('[Vendor] Creating document...');
 
@@ -184,10 +247,17 @@ const registerVendor = async function (req, res) {
       category:      category,
       description:   description,
       whatsApp:      whatsApp,
+      phone:         phone,
+      campusLocation: campusLocation,
+      profilePicture: profilePicture,
+      coverImage:     coverImage,
       refCode:       refCode,
       paymentRef:    paymentRef,
-      paymentStatus: paymentRef ? 'paid' : 'pending',
-      status:        'pending'
+      paymentStatus: 'paid',
+      status:        'pending',
+      subscriptionPlan:      resolvedPlan.key,
+      subscriptionAmount:    amountPaid,
+      subscriptionExpiresAt: subscriptionExpiresAt
     });
 
     console.log('[Vendor] [OK] Created! ID:', vendor._id);

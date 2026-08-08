@@ -60,6 +60,24 @@ function paystackRequest(path, method, data) {
 //   POST /api/payments/initialize
 // ================================================
 
+// ================================================
+//   VENDOR SUBSCRIPTION PLANS — single source of truth.
+//   Frontend amount is NEVER trusted; every vendor_registration
+//   and vendor_renewal initialize() call is validated against this.
+// ================================================
+var VENDOR_PLANS = {
+  '6months':  { months: 6,  amount: 5000 },
+  '12months': { months: 12, amount: 8000 }
+};
+
+// Duration is ALWAYS derived from the amount Paystack actually confirms was
+// paid — never from metadata, which a client controls on the /verify call.
+// This makes it impossible to pay for the cheap plan and claim the longer one.
+function planFromAmount(amountPaid) {
+  if (amountPaid >= VENDOR_PLANS['12months'].amount) return { key: '12months', plan: VENDOR_PLANS['12months'] };
+  return { key: '6months', plan: VENDOR_PLANS['6months'] };
+}
+
 const initializePayment = async function (req, res) {
   try {
     console.log('[Payment] initialize — user:', req.user.email);
@@ -69,6 +87,22 @@ const initializePayment = async function (req, res) {
     var type        = (req.body.type        || '').trim();
     var description = (req.body.description || type).trim();
     var metadata    = req.body.metadata     || {};
+
+    // Server-side price enforcement for vendor plans — the client picks a
+    // plan, but the CHARGED amount always comes from VENDOR_PLANS, never
+    // from req.body.amount, so a tampered client request can't pay less
+    // than the real price for the plan it claims.
+    if (type === 'vendor_registration' || type === 'vendor_renewal') {
+      var planKey = (metadata.plan || '').trim();
+      var plan    = VENDOR_PLANS[planKey];
+      if (!plan) {
+        return res.status(400).json({
+          success: false,
+          message: 'A valid plan (6months or 12months) is required.'
+        });
+      }
+      amount = plan.amount; // override whatever the client sent
+    }
 
     if (!amount || amount < 100) {
       return res.status(400).json({
@@ -179,7 +213,10 @@ const verifyPayment = async function (req, res) {
     var finalType  = type || txMeta.type || '';
 
     // Merge metadata
-    var mergedMeta = Object.assign({}, txMeta, metadata);
+    // txMeta comes from Paystack's own stored transaction record (authoritative).
+    // metadata is whatever the client sent on this /verify call (not trusted).
+    // txMeta must win on any overlapping key, so it goes LAST.
+    var mergedMeta = Object.assign({}, metadata, txMeta);
     if (vendorForm) mergedMeta.vendorForm = vendorForm;
 
     var result = await processPayment(
@@ -215,11 +252,15 @@ async function processPayment(type, reference, user, amount, metadata) {
     if (!renewVendor) {
       return { updated: 'none', reason: 'vendor not found' };
     }
+    var renewPlanKey = planFromAmount(amount).key;
+    var renewPlan     = VENDOR_PLANS[renewPlanKey];
     var base = (renewVendor.subscriptionExpiresAt && new Date(renewVendor.subscriptionExpiresAt) > new Date())
       ? new Date(renewVendor.subscriptionExpiresAt)
       : new Date();
-    base.setMonth(base.getMonth() + 6);
+    base.setMonth(base.getMonth() + renewPlan.months);
     renewVendor.subscriptionExpiresAt = base;
+    renewVendor.subscriptionPlan      = renewPlanKey;
+    renewVendor.subscriptionAmount    = amount;
     renewVendor.paymentRef = reference;
     await renewVendor.save();
     console.log('[Payment] ✅ Vendor subscription renewed:', renewVendor.bizName, '| until', base);
@@ -240,8 +281,16 @@ async function processPayment(type, reference, user, amount, metadata) {
 
     if (existingVendor) {
       // Update payment status on existing record
+      var planKeyExisting = planFromAmount(amount).key;
+      var planExisting     = VENDOR_PLANS[planKeyExisting];
+      var expiryBase = new Date();
+      expiryBase.setMonth(expiryBase.getMonth() + planExisting.months);
+
       existingVendor.paymentStatus = 'paid';
       existingVendor.paymentRef    = reference;
+      existingVendor.subscriptionPlan       = planKeyExisting;
+      existingVendor.subscriptionAmount     = amount;
+      existingVendor.subscriptionExpiresAt  = expiryBase;
       await existingVendor.save();
       console.log('[Payment] ✅ Existing vendor payment updated:', existingVendor.bizName);
       return {
@@ -258,8 +307,10 @@ async function processPayment(type, reference, user, amount, metadata) {
       console.log('[Payment] Creating vendor from metadata form...');
       console.log('[Payment] Form data:', JSON.stringify(form));
 
-      var sixMonthsFromNow = new Date();
-      sixMonthsFromNow.setMonth(sixMonthsFromNow.getMonth() + 6);
+      var planKeyNew = planFromAmount(amount).key;
+      var planNew     = VENDOR_PLANS[planKeyNew];
+      var planExpiry  = new Date();
+      planExpiry.setMonth(planExpiry.getMonth() + planNew.months);
 
       var newVendor = await Vendor.create({
         user:          user._id,
@@ -271,11 +322,17 @@ async function processPayment(type, reference, user, amount, metadata) {
         category:      form.category    || '',
         description:   form.description || '',
         whatsApp:      form.whatsApp    || '',
+        phone:         form.phone          || '',
+        campusLocation: form.campusLocation || '',
+        profilePicture: form.profilePicture || '',
+        coverImage:     form.coverImage     || '',
         refCode:       form.refCode     || '',
         paymentRef:    reference,
         paymentStatus: 'paid',
         status:        'pending',
-        subscriptionExpiresAt: sixMonthsFromNow
+        subscriptionPlan:      planKeyNew,
+        subscriptionAmount:    amount,
+        subscriptionExpiresAt: planExpiry
       });
 
       // Update user role
